@@ -53,8 +53,13 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem) extends Lazy
       complete("OK!")
     } ~ {
       get {
-        logger.debug("list of bucket")
-        complete("OK!")
+        extractRequest { req =>
+          logger.debug("##### list of bucket")
+          logger.debug(req.uri.toString)
+          logger.debug(req.headers.toString)
+
+          complete("OK!")
+        }
       }
     }
   }
