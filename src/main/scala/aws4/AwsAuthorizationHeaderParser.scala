@@ -2,7 +2,6 @@ package aws4
 
 import scala.util.parsing.combinator.RegexParsers
 
-
 object AwsAuthorizationHeaderParser extends RegexParsers {
   private val algorithm = """[\w-]+""".r
 
@@ -17,7 +16,7 @@ object AwsAuthorizationHeaderParser extends RegexParsers {
   }
 
   case class SignedHeaders(signedHeaders: List[String])
-  private val signedHeaders = "SignedHeaders=" ~> repsep("""[\w-]+""".r, ";") ^^ { res => SignedHeaders(res)}
+  private val signedHeaders = "SignedHeaders=" ~> repsep("""[\w-]+""".r, ";") ^^ { res => SignedHeaders(res) }
   private val signature = "Signature=" ~> """[\w-]+""".r
 
   private val fields = credential | signedHeaders | signature
@@ -28,8 +27,7 @@ object AwsAuthorizationHeaderParser extends RegexParsers {
         alg,
         params.collect { case x: Credential => x }.head,
         params.collect { case x: SignedHeaders => x.signedHeaders }.head,
-        params.collect { case x: String => x }.head
-      )
+        params.collect { case x: String => x }.head)
   }
 
   def apply(input: String): Either[String, AwsAuthorizationHeader] = parseAll(headerValue, input) match {

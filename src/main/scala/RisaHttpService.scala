@@ -2,14 +2,14 @@ import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.Http.ServerBinding
 import akka.http.scaladsl.model.headers.RawHeader
-import akka.http.scaladsl.model.{HttpResponse, StatusCodes}
+import akka.http.scaladsl.model.{ HttpResponse, StatusCodes }
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server._
 import akka.stream.ActorMaterializer
-import aws4.{AWS4Signer, AuthError}
-import com.typesafe.scalalogging.{LazyLogging, Logger}
+import aws4.{ AWS4Signer, AuthError }
+import com.typesafe.scalalogging.{ LazyLogging, Logger }
 
-import scala.concurrent.{ExecutionContextExecutor, Future}
+import scala.concurrent.{ ExecutionContextExecutor, Future }
 
 case class RisaHttpService(port: Int)(implicit system: ActorSystem) extends LazyLogging with JsonMarshallSupport {
   private var bind: ServerBinding = _
@@ -37,16 +37,15 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem) extends Lazy
     }
   }
 
-
   def wrappedRootRoute: Route = (RoutesUtils.timeoutHandler & RoutesUtils.baseResponseHeader) {
     errorHandleRoute
   }
 
   def errorHandleRoute: Route = (
     handleRejections(RoutesUtils.rejectionHandler) &
-      handleExceptions(RoutesUtils.exceptionHandler(logger))) {
-    rootRoute
-  }
+    handleExceptions(RoutesUtils.exceptionHandler(logger))) {
+      rootRoute
+    }
   val userProvider = (accesskey: String) => {
     logger.debug(s"accesskey $accesskey")
     Future.successful(Some(AccessKey("accessKey", "secret")))
@@ -89,16 +88,16 @@ object RoutesUtils extends JsonMarshallSupport {
       .handleNotFound {
         complete((StatusCodes.NotFound, ErrorResponse("Not Found Endpoint")))
       }
-      .handle { case ex: ValidationRejection =>
-        complete((StatusCodes.BadRequest, ErrorResponse(ex.message)))
+      .handle {
+        case ex: ValidationRejection =>
+          complete((StatusCodes.BadRequest, ErrorResponse(ex.message)))
       }
       .result()
   }
 
   def timeoutResponse: HttpResponse = HttpResponse(
     StatusCodes.ServiceUnavailable,
-    entity = writeJson(ErrorResponse("service unavailable"))
-  )
+    entity = writeJson(ErrorResponse("service unavailable")))
 
   def timeoutHandler: Directive0 = withRequestTimeoutResponse(_ => timeoutResponse)
 
@@ -107,22 +106,22 @@ object RoutesUtils extends JsonMarshallSupport {
     import akka.http.scaladsl.model.headers._
     respondWithHeaders(
       `Cache-Control`(`max-age`(10)),
-      `Access-Control-Allow-Origin`.*
-    )
+      `Access-Control-Allow-Origin`.*)
   }
 
   def extractAws4(userProvider: String => Future[Option[AccessKey]]): Directive1[AccessKey] = {
     (extractRequest & extractRequestEntity)
-      .tflatMap { case (req, entity) =>
-        val contentType = RawHeader("Content-Type", entity.contentType.toString())
-        val headers = req.headers :+ contentType
-        val accessKey = AWS4Signer.extractAccessKey(headers)
-        onSuccess(userProvider(accessKey))
-          .map(r => r.getOrElse(throw AuthError()))
-          .map(key => {
-            AWS4Signer.validateSignature(headers, key.key, key.secret, req.method.value, req.uri.path.toString(), req.uri.rawQueryString.getOrElse(""))
-            key
-          })
+      .tflatMap {
+        case (req, entity) =>
+          val contentType = RawHeader("Content-Type", entity.contentType.toString())
+          val headers = req.headers :+ contentType
+          val accessKey = AWS4Signer.extractAccessKey(headers)
+          onSuccess(userProvider(accessKey))
+            .map(r => r.getOrElse(throw AuthError()))
+            .map(key => {
+              AWS4Signer.validateSignature(headers, key.key, key.secret, req.method.value, req.uri.path.toString(), req.uri.rawQueryString.getOrElse(""))
+              key
+            })
       }
   }
 

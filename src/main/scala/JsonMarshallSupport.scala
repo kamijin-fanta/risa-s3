@@ -1,5 +1,5 @@
-import akka.http.scaladsl.marshalling.{Marshaller, ToEntityMarshaller}
-import akka.http.scaladsl.model.{ContentTypes, HttpEntity}
+import akka.http.scaladsl.marshalling.{ Marshaller, ToEntityMarshaller }
+import akka.http.scaladsl.model.{ ContentTypes, HttpEntity }
 import org.json4s.DefaultFormats
 import org.json4s.native.Serialization.write
 

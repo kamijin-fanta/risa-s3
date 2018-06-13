@@ -1,7 +1,7 @@
 import akka.actor.ActorSystem
 import awscala.Region
 import awscala.s3.S3
-import org.scalatest.{BeforeAndAfterAll, FunSpec, Matchers}
+import org.scalatest.{ BeforeAndAfterAll, FunSpec, Matchers }
 
 import scala.concurrent.ExecutionContextExecutor
 
