@@ -8,6 +8,7 @@ import akka.stream.ActorMaterializer
 import com.typesafe.scalalogging.LazyLogging
 
 import scala.concurrent.{ExecutionContextExecutor, Future}
+import scala.util.Success
 
 case class RisaHttpService(port: Int)(implicit system: ActorSystem) extends LazyLogging with JsonMarshallSupport {
   private var bind: ServerBinding = _
@@ -65,6 +66,7 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem) extends Lazy
   }
 }
 
+
 case class ErrorResponse(error: String)
 
 object RoutesUtils extends JsonMarshallSupport {
@@ -98,6 +100,11 @@ object RoutesUtils extends JsonMarshallSupport {
       `Cache-Control`(`max-age`(10)),
       `Access-Control-Allow-Origin`.*
     )
+  }
+
+  case class AccessKey(key: String, secret: String)
+  def extractAws4(accessKey: AccessKey): Directive1[String] = {
+    extractRequest.map(req => "")
   }
 
 }
