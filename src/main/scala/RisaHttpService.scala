@@ -1,14 +1,15 @@
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.Http.ServerBinding
+import akka.http.scaladsl.model.headers.RawHeader
 import akka.http.scaladsl.model.{HttpResponse, StatusCodes}
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server._
 import akka.stream.ActorMaterializer
-import com.typesafe.scalalogging.LazyLogging
+import aws4.{AWS4Signer, AuthError}
+import com.typesafe.scalalogging.{LazyLogging, Logger}
 
 import scala.concurrent.{ExecutionContextExecutor, Future}
-import scala.util.Success
 
 case class RisaHttpService(port: Int)(implicit system: ActorSystem) extends LazyLogging with JsonMarshallSupport {
   private var bind: ServerBinding = _
@@ -43,35 +44,43 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem) extends Lazy
 
   def errorHandleRoute: Route = (
     handleRejections(RoutesUtils.rejectionHandler) &
-      handleExceptions(RoutesUtils.exceptionHandler)) {
+      handleExceptions(RoutesUtils.exceptionHandler(logger))) {
     rootRoute
+  }
+  val userProvider = (accesskey: String) => {
+    logger.debug(s"accesskey $accesskey")
+    Future.successful(Some(AccessKey("accessKey", "secret")))
   }
 
   def rootRoute: Route = {
+    RoutesUtils.extractAws4(userProvider) { key =>
+      logger.debug("AUTH! " + key)
+      pathPrefix(Segment) { bucket =>
+        logger.debug("buckets: " + bucket)
+        complete("OK!")
+      } ~ {
+        get {
+          extractRequest { req =>
+            logger.debug("##### list of bucket")
+            logger.debug(req.uri.toString)
+            logger.debug(req.headers.toString)
 
-    pathPrefix(Segment) { bucket =>
-      logger.debug("buckets: " + bucket)
-      complete("OK!")
-    } ~ {
-      get {
-        extractRequest { req =>
-          logger.debug("##### list of bucket")
-          logger.debug(req.uri.toString)
-          logger.debug(req.headers.toString)
-
-          complete("OK!")
+            complete("OK!")
+          }
         }
       }
     }
   }
 }
 
+case class AccessKey(key: String, secret: String)
 
 case class ErrorResponse(error: String)
 
 object RoutesUtils extends JsonMarshallSupport {
-  def exceptionHandler = ExceptionHandler {
-    case _ =>
+  def exceptionHandler(logger: Logger) = ExceptionHandler {
+    case th: Throwable =>
+      logger.warn("Internal Server Error", th)
       complete((StatusCodes.InternalServerError, ErrorResponse("Internal Server Error")))
   }
 
@@ -102,9 +111,19 @@ object RoutesUtils extends JsonMarshallSupport {
     )
   }
 
-  case class AccessKey(key: String, secret: String)
-  def extractAws4(accessKey: AccessKey): Directive1[String] = {
-    extractRequest.map(req => "")
+  def extractAws4(userProvider: String => Future[Option[AccessKey]]): Directive1[AccessKey] = {
+    (extractRequest & extractRequestEntity)
+      .tflatMap { case (req, entity) =>
+        val contentType = RawHeader("Content-Type", entity.contentType.toString())
+        val headers = req.headers :+ contentType
+        val accessKey = AWS4Signer.extractAccessKey(headers)
+        onSuccess(userProvider(accessKey))
+          .map(r => r.getOrElse(throw AuthError()))
+          .map(key => {
+            AWS4Signer.validateSignature(headers, key.key, key.secret, req.method.value, req.uri.path.toString(), req.uri.rawQueryString.getOrElse(""))
+            key
+          })
+      }
   }
 
 }

@@ -24,12 +24,12 @@ libraryDependencies ++= Seq(
   "org.scalamock" %% "scalamock-scalatest-support" % "3.6.0" % Test,
 
   // akka streams
-  "com.typesafe.akka" %% "akka-stream" % "2.5.3",
-  "com.typesafe.akka" %% "akka-stream-testkit" % "2.5.3" % Test,
+  "com.typesafe.akka" %% "akka-stream" % "2.5.13",
+  "com.typesafe.akka" %% "akka-stream-testkit" % "2.5.13" % Test,
 
   // akka http
-  "com.typesafe.akka" %% "akka-http" % "10.0.10",
-  "com.typesafe.akka" %% "akka-http-testkit" % "10.0.10" % Test
+  "com.typesafe.akka" %% "akka-http" % "10.1.1",
+  "com.typesafe.akka" %% "akka-http-testkit" % "10.1.1" % Test
 )
 
 
