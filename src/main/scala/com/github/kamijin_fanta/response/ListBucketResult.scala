@@ -4,11 +4,8 @@ import java.time.{OffsetDateTime, ZoneOffset, ZonedDateTime}
 
 import scala.xml.Elem
 
-trait XmlSerializable {
-  def asXml: Elem
-}
-
 case class Content(key: String, lastModified: OffsetDateTime, md5: String, size: Long, storageClass: String)
+
 case class ListBucketResult(bucket: String, prefix: Option[String], delimiter: Option[String], commonPrefixes: List[String], contents: List[Content], isTruncated: Boolean) extends XmlSerializable {
   implicit class RichOffsetDateTime(dateTime: OffsetDateTime) {
     def toUtc: ZonedDateTime =
