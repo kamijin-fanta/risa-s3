@@ -1,8 +1,10 @@
+package com.github.kamijin_fanta
+
 import akka.http.scaladsl.model.headers.RawHeader
 import akka.http.scaladsl.model.{ HttpResponse, StatusCodes }
 import akka.http.scaladsl.server.Directives.{ complete, extractRequest, extractRequestEntity, onSuccess, respondWithHeaders, withRequestTimeoutResponse }
 import akka.http.scaladsl.server._
-import aws4.{ AWS4Signer, AccessCredential, AccountProvider, AuthError }
+import com.github.kamijin_fanta.aws4.{ AWS4Signer, AccessCredential, AccountProvider, AuthError }
 import com.typesafe.scalalogging.Logger
 
 object HttpDirectives extends JsonMarshallSupport {

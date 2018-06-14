@@ -1,6 +1,6 @@
 import akka.http.scaladsl.model.HttpHeader
 import akka.http.scaladsl.model.HttpHeader.ParsingResult
-import aws4.{AWS4Signer, AuthError}
+import com.github.kamijin_fanta.aws4.{AWS4Signer, AuthError}
 import org.scalatest.FunSpec
 
 class AWS4SignerTest extends FunSpec {

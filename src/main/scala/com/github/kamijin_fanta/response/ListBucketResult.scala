@@ -1,4 +1,4 @@
-package response
+package com.github.kamijin_fanta.response
 
 import java.time.{ OffsetDateTime, ZoneOffset, ZonedDateTime }
 
@@ -9,7 +9,7 @@ trait XmlSerializable {
 }
 
 case class Content(key: String, lastModified: OffsetDateTime, md5: String, size: Long, storageClass: String)
-case class ListBucket(bucket: String, prefix: Option[String], delimiter: Option[String], commonPrefixes: List[String], contents: List[Content], isTruncated: Boolean) extends XmlSerializable {
+case class ListBucketResult(bucket: String, prefix: Option[String], delimiter: Option[String], commonPrefixes: List[String], contents: List[Content], isTruncated: Boolean) extends XmlSerializable {
   implicit class RichOffsetDateTime(dateTime: OffsetDateTime) {
     def toUtc: ZonedDateTime =
       dateTime.atZoneSameInstant(ZoneOffset.UTC)

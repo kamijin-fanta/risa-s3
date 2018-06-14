@@ -1,3 +1,5 @@
+package com.github.kamijin_fanta
+
 import akka.actor.ActorSystem
 
 import scala.concurrent.ExecutionContextExecutor

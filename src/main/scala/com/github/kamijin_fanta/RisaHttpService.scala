@@ -1,15 +1,21 @@
+package com.github.kamijin_fanta
+
+import java.time.OffsetDateTime
+
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.Http.ServerBinding
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server._
 import akka.stream.ActorMaterializer
-import aws4.{ AccessCredential, AccountProvider }
+import com.github.kamijin_fanta.aws4.{ AccessCredential, AccountProvider }
+import com.github.kamijin_fanta.response.{ Bucket, ListAllMyBucketsResult, ListBucketResult }
 import com.typesafe.scalalogging.LazyLogging
 
 import scala.concurrent.{ ExecutionContextExecutor, Future }
 
-case class RisaHttpService(port: Int)(implicit system: ActorSystem) extends LazyLogging with JsonMarshallSupport {
+case class RisaHttpService(port: Int)(implicit system: ActorSystem)
+  extends LazyLogging with JsonMarshallSupport with XmlMarshallSupport {
   private var bind: ServerBinding = _
 
   def run()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
@@ -54,9 +60,12 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem) extends Lazy
   def rootRoute: Route = {
     HttpDirectives.extractAws4(MockAccountProvider) { key =>
       logger.debug("AUTH! " + key)
-      pathPrefix(Segments) { bucket =>
-        logger.debug("buckets: " + bucket)
+      (pathPrefix(Segments) & extractUri & extractBucket & extractRequest) { (pathSegments, uri, bucket, req) =>
+        logger.debug(s"path: ${req.uri}")
+        logger.debug(s"bucket: $bucket pathSegments: $pathSegments auth: $key ")
         complete("OK!")
+        //        complete(ListBucketResult(bucket, None, Some("/"), List(), List(), true))
+        complete(ListAllMyBucketsResult("owner", "UUID", List(Bucket("example-bucket", OffsetDateTime.now()))))
       } ~ {
         get {
           extractRequest { req =>
@@ -69,6 +78,13 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem) extends Lazy
         }
       }
     }
+  }
+
+  // .で区切られたドメインの最初の部分を返すだけ
+  def extractBucket: Directive1[String] = {
+    extractUri
+      .map(_.authority.host.address())
+      .map(_.split('.').head)
   }
 }
 

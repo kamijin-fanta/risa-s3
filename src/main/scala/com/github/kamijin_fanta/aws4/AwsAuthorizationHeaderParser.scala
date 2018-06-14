@@ -1,4 +1,4 @@
-package aws4
+package com.github.kamijin_fanta.aws4
 
 import scala.util.parsing.combinator.RegexParsers
 

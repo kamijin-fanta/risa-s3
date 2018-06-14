@@ -1,10 +1,16 @@
+package com.github.kamijin_fanta
+
 import akka.http.scaladsl.marshalling.{ Marshaller, ToEntityMarshaller }
 import akka.http.scaladsl.model.{ ContentTypes, HttpEntity }
-import org.json4s.DefaultFormats
-import org.json4s.native.Serialization.write
+import org.json4s.{ DefaultFormats, Extraction, Formats }
+import org.json4s.native.JsonMethods
 
 trait JsonMarshallSupport {
-  def writeJson[T <: AnyRef](item: T): String = write(item)(DefaultFormats)
+  private implicit val fmt: Formats = DefaultFormats
+
+  def writeJson[T <: AnyRef](item: T): String = {
+    JsonMethods.pretty(JsonMethods.render(Extraction.decompose(item)))
+  }
 
   def formats[T <: AnyRef](): ToEntityMarshaller[T] = {
     Marshaller.opaque { item =>
