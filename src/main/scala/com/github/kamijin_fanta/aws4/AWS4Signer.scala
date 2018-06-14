@@ -58,7 +58,6 @@ object AWS4Signer {
       .map(h => s"${h.name.toLowerCase}:${h.value()}")
     val contentHash = headers.find(_.name() == "x-amz-content-sha256").map(_.value).getOrElse(throw NotFoundHeader("x-amz-content-sha256"))
     val canonicalReq = AWS4Signer.canonicalRequest(method, path, query, canonicalHeader, auth.signedHeaders, contentHash)
-
     val amzDatetime = headers.find(_.name().toLowerCase == "x-amz-date").map(_.value()).getOrElse("")
     val amzDate = amzDatetime.substring(0, 8)
 

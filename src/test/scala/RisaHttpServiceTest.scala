@@ -27,10 +27,12 @@ class RisaHttpServiceTest extends FunSpec with Matchers with BeforeAndAfterAll {
   describe("s3") {
     it("bucket") {
       implicit val region = Region.Tokyo
-      val s3 = S3("accessKey", "secret")
+      implicit val s3 = S3("accessKey", "secret")
       s3.setEndpoint(s"http://localhost:${port}")
-      val b = s3.bucket("example-bucket")
-      println(s"Bucket: $b")
+      val bucket = s3.bucket("example-bucket")
+      assert(bucket.isDefined)
+      val list = bucket.get.ls("/")
+      println(list)
     }
   }
 }

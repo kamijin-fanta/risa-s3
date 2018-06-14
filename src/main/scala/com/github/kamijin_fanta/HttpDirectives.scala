@@ -1,10 +1,12 @@
 package com.github.kamijin_fanta
 
+import java.net.URLEncoder
+
 import akka.http.scaladsl.model.headers.RawHeader
-import akka.http.scaladsl.model.{ HttpResponse, StatusCodes }
-import akka.http.scaladsl.server.Directives.{ complete, extractRequest, extractRequestEntity, onSuccess, respondWithHeaders, withRequestTimeoutResponse }
+import akka.http.scaladsl.model.{HttpResponse, StatusCodes}
+import akka.http.scaladsl.server.Directives.{complete, extractRequest, extractRequestEntity, onSuccess, respondWithHeaders, withRequestTimeoutResponse}
 import akka.http.scaladsl.server._
-import com.github.kamijin_fanta.aws4.{ AWS4Signer, AccessCredential, AccountProvider, AuthError }
+import com.github.kamijin_fanta.aws4.{AWS4Signer, AccessCredential, AccountProvider, AuthError}
 import com.typesafe.scalalogging.Logger
 
 object HttpDirectives extends JsonMarshallSupport {
@@ -50,7 +52,12 @@ object HttpDirectives extends JsonMarshallSupport {
           onSuccess(accountProvider.findAccessKey(accessKey))
             .map(r => r.getOrElse(throw AuthError()))
             .map(key => {
-              AWS4Signer.validateSignature(headers, key.accessKey, key.accessKeySecret, req.method.value, req.uri.path.toString(), req.uri.rawQueryString.getOrElse(""))
+              val queryString = req.uri.query()
+                .sortBy(_._1)
+                .map { case (k, v) => s"$k=${URLEncoder.encode(v, "UTF-8")}" }
+                .mkString("&")
+
+              AWS4Signer.validateSignature(headers, key.accessKey, key.accessKeySecret, req.method.value, req.uri.path.toString(), queryString)
               key
             })
       }

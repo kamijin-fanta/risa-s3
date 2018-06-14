@@ -8,11 +8,11 @@ import akka.http.scaladsl.Http.ServerBinding
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server._
 import akka.stream.ActorMaterializer
-import com.github.kamijin_fanta.aws4.{ AccessCredential, AccountProvider }
-import com.github.kamijin_fanta.response.{ Bucket, ListAllMyBucketsResult, ListBucketResult }
+import com.github.kamijin_fanta.aws4.{AccessCredential, AccountProvider}
+import com.github.kamijin_fanta.response.{Bucket, ListAllMyBucketsResult}
 import com.typesafe.scalalogging.LazyLogging
 
-import scala.concurrent.{ ExecutionContextExecutor, Future }
+import scala.concurrent.{ExecutionContextExecutor, Future}
 
 case class RisaHttpService(port: Int)(implicit system: ActorSystem)
   extends LazyLogging with JsonMarshallSupport with XmlMarshallSupport {
@@ -60,9 +60,9 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem)
   def rootRoute: Route = {
     HttpDirectives.extractAws4(MockAccountProvider) { key =>
       logger.debug("AUTH! " + key)
-      (pathPrefix(Segments) & extractUri & extractBucket & extractRequest) { (pathSegments, uri, bucket, req) =>
+      (pathSingleSlash & extractUri & extractBucket & extractRequest) { (uri, bucket, req) =>
         logger.debug(s"path: ${req.uri}")
-        logger.debug(s"bucket: $bucket pathSegments: $pathSegments auth: $key ")
+        logger.debug(s"bucket: $bucket auth: $key ")
         complete("OK!")
         //        complete(ListBucketResult(bucket, None, Some("/"), List(), List(), true))
         complete(ListAllMyBucketsResult("owner", "UUID", List(Bucket("example-bucket", OffsetDateTime.now()))))

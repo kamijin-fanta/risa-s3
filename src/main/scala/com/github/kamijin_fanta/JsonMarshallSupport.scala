@@ -1,9 +1,9 @@
 package com.github.kamijin_fanta
 
-import akka.http.scaladsl.marshalling.{ Marshaller, ToEntityMarshaller }
-import akka.http.scaladsl.model.{ ContentTypes, HttpEntity }
-import org.json4s.{ DefaultFormats, Extraction, Formats }
+import akka.http.scaladsl.marshalling.{Marshaller, ToEntityMarshaller}
+import akka.http.scaladsl.model.{ContentTypes, HttpEntity}
 import org.json4s.native.JsonMethods
+import org.json4s.{DefaultFormats, Extraction, Formats}
 
 trait JsonMarshallSupport {
   private implicit val fmt: Formats = DefaultFormats
