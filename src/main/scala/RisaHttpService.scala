@@ -1,13 +1,11 @@
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.Http.ServerBinding
-import akka.http.scaladsl.model.headers.RawHeader
-import akka.http.scaladsl.model.{ HttpResponse, StatusCodes }
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server._
 import akka.stream.ActorMaterializer
-import aws4.{ AWS4Signer, AuthError }
-import com.typesafe.scalalogging.{ LazyLogging, Logger }
+import aws4.{ AccessCredential, AccountProvider }
+import com.typesafe.scalalogging.LazyLogging
 
 import scala.concurrent.{ ExecutionContextExecutor, Future }
 
@@ -37,24 +35,26 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem) extends Lazy
     }
   }
 
-  def wrappedRootRoute: Route = (RoutesUtils.timeoutHandler & RoutesUtils.baseResponseHeader) {
+  def wrappedRootRoute: Route = (HttpDirectives.timeoutHandler & HttpDirectives.baseResponseHeader) {
     errorHandleRoute
   }
 
   def errorHandleRoute: Route = (
-    handleRejections(RoutesUtils.rejectionHandler) &
-    handleExceptions(RoutesUtils.exceptionHandler(logger))) {
+    handleRejections(HttpDirectives.rejectionHandler) &
+    handleExceptions(HttpDirectives.exceptionHandler(logger))) {
       rootRoute
     }
-  val userProvider = (accesskey: String) => {
-    logger.debug(s"accesskey $accesskey")
-    Future.successful(Some(AccessKey("accessKey", "secret")))
+
+  object MockAccountProvider extends AccountProvider {
+    override def findAccessKey(accessKey: String): Future[Option[AccessCredential]] = {
+      Future.successful(Some(AccessCredential("accessKey", "secret")))
+    }
   }
 
   def rootRoute: Route = {
-    RoutesUtils.extractAws4(userProvider) { key =>
+    HttpDirectives.extractAws4(MockAccountProvider) { key =>
       logger.debug("AUTH! " + key)
-      pathPrefix(Segment) { bucket =>
+      pathPrefix(Segments) { bucket =>
         logger.debug("buckets: " + bucket)
         complete("OK!")
       } ~ {
@@ -72,57 +72,4 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem) extends Lazy
   }
 }
 
-case class AccessKey(key: String, secret: String)
-
 case class ErrorResponse(error: String)
-
-object RoutesUtils extends JsonMarshallSupport {
-  def exceptionHandler(logger: Logger) = ExceptionHandler {
-    case th: Throwable =>
-      logger.warn("Internal Server Error", th)
-      complete((StatusCodes.InternalServerError, ErrorResponse("Internal Server Error")))
-  }
-
-  def rejectionHandler: RejectionHandler = {
-    RejectionHandler.newBuilder()
-      .handleNotFound {
-        complete((StatusCodes.NotFound, ErrorResponse("Not Found Endpoint")))
-      }
-      .handle {
-        case ex: ValidationRejection =>
-          complete((StatusCodes.BadRequest, ErrorResponse(ex.message)))
-      }
-      .result()
-  }
-
-  def timeoutResponse: HttpResponse = HttpResponse(
-    StatusCodes.ServiceUnavailable,
-    entity = writeJson(ErrorResponse("service unavailable")))
-
-  def timeoutHandler: Directive0 = withRequestTimeoutResponse(_ => timeoutResponse)
-
-  def baseResponseHeader: Directive0 = {
-    import akka.http.scaladsl.model.headers.CacheDirectives._
-    import akka.http.scaladsl.model.headers._
-    respondWithHeaders(
-      `Cache-Control`(`max-age`(10)),
-      `Access-Control-Allow-Origin`.*)
-  }
-
-  def extractAws4(userProvider: String => Future[Option[AccessKey]]): Directive1[AccessKey] = {
-    (extractRequest & extractRequestEntity)
-      .tflatMap {
-        case (req, entity) =>
-          val contentType = RawHeader("Content-Type", entity.contentType.toString())
-          val headers = req.headers :+ contentType
-          val accessKey = AWS4Signer.extractAccessKey(headers)
-          onSuccess(userProvider(accessKey))
-            .map(r => r.getOrElse(throw AuthError()))
-            .map(key => {
-              AWS4Signer.validateSignature(headers, key.key, key.secret, req.method.value, req.uri.path.toString(), req.uri.rawQueryString.getOrElse(""))
-              key
-            })
-      }
-  }
-
-}

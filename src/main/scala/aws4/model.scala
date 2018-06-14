@@ -5,3 +5,5 @@ case class Credential(key: String, date: String, region: String, service: String
 }
 
 case class AwsAuthorizationHeader(algorithm: String, credential: Credential, signedHeaders: List[String], signature: String)
+
+case class AccessCredential(accessKey: String, accessKeySecret: String)
