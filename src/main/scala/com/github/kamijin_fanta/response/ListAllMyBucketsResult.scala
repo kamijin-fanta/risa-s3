@@ -14,13 +14,13 @@ case class ListAllMyBucketsResult(ownerName: String, ownerUUID: String, buckets:
         <DisplayName>{ ownerName }</DisplayName>
       </Owner>
       <Buckets>
-      {
-        buckets.map(bucket =>
-          <Bucket>
-            <Name>{ bucket.name }</Name>
-            <CreationDate>{ bucket.creationDate.toString }</CreationDate>
-          </Bucket>)
-      }
+        {
+          buckets.map(bucket =>
+            <Bucket>
+              <Name>{ bucket.name }</Name>
+              <CreationDate>{ bucket.creationDate.toString }</CreationDate>
+            </Bucket>)
+        }
       </Buckets>
     </ListAllMyBucketsResult>
 }

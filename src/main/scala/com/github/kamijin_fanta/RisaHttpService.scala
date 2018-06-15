@@ -1,18 +1,21 @@
 package com.github.kamijin_fanta
 
+import java.nio.file.{ Files, Paths }
 import java.time.OffsetDateTime
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.Http.ServerBinding
+import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server._
-import akka.stream.ActorMaterializer
-import com.github.kamijin_fanta.aws4.{AccessCredential, AccountProvider}
-import com.github.kamijin_fanta.response.{Bucket, ListAllMyBucketsResult}
+import akka.stream.scaladsl.FileIO
+import akka.stream.{ ActorMaterializer, Materializer }
+import com.github.kamijin_fanta.aws4.{ AccessCredential, AccountProvider, AwsSig4StreamStage }
+import com.github.kamijin_fanta.response.{ Bucket, Content, ListAllMyBucketsResult, ListBucketResult }
 import com.typesafe.scalalogging.LazyLogging
 
-import scala.concurrent.{ExecutionContextExecutor, Future}
+import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
 
 case class RisaHttpService(port: Int)(implicit system: ActorSystem)
   extends LazyLogging with JsonMarshallSupport with XmlMarshallSupport {
@@ -20,6 +23,7 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem)
 
   def run()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
     implicit val mat: ActorMaterializer = ActorMaterializer()
+    implicit val ctx: ExecutionContext = system.dispatcher
 
     Http()
       .bindAndHandle(wrappedRootRoute, "0.0.0.0", port)
@@ -41,11 +45,11 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem)
     }
   }
 
-  def wrappedRootRoute: Route = (HttpDirectives.timeoutHandler & HttpDirectives.baseResponseHeader) {
+  def wrappedRootRoute(implicit mat: Materializer, ctx: ExecutionContext): Route = (HttpDirectives.timeoutHandler & HttpDirectives.baseResponseHeader) {
     errorHandleRoute
   }
 
-  def errorHandleRoute: Route = (
+  def errorHandleRoute(implicit mat: Materializer, ctx: ExecutionContext): Route = (
     handleRejections(HttpDirectives.rejectionHandler) &
     handleExceptions(HttpDirectives.exceptionHandler(logger))) {
       rootRoute
@@ -57,35 +61,56 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem)
     }
   }
 
-  def rootRoute: Route = {
-    HttpDirectives.extractAws4(MockAccountProvider) { key =>
-      logger.debug("AUTH! " + key)
-      (pathSingleSlash & extractUri & extractBucket & extractRequest) { (uri, bucket, req) =>
-        logger.debug(s"path: ${req.uri}")
-        logger.debug(s"bucket: $bucket auth: $key ")
-        complete("OK!")
-        //        complete(ListBucketResult(bucket, None, Some("/"), List(), List(), true))
-        complete(ListAllMyBucketsResult("owner", "UUID", List(Bucket("example-bucket", OffsetDateTime.now()))))
-      } ~ {
-        get {
-          extractRequest { req =>
-            logger.debug("##### list of bucket")
-            logger.debug(req.uri.toString)
-            logger.debug(req.headers.toString)
+  def rootRoute(implicit mat: Materializer, ctx: ExecutionContext): Route = {
+    (HttpDirectives.extractAws4(MockAccountProvider) & extractRequest) { (key, req) =>
+      logger.debug(s"Success Auth: $key Request: ${req.method.value} ${req.uri}")
 
-            complete("OK!")
+      extractBucket { bucket => // バケットに対しての操作
+        (get & pathSingleSlash & parameters('prefix.?, 'marker.?)) { (prefix, maker) =>
+          logger.debug(s"ListBucketResult bucket: $bucket")
+          val contents = List(Content("example-file.txt", OffsetDateTime.now(), "0000", 123, "STANDARD"))
+          complete(ListBucketResult(bucket, Some(""), Some(""), List(), contents, false))
+        } ~ get {
+
+          val target = req.uri.path.toString().replace("..", "")
+          val path = Paths.get("./data" + target)
+          val from = FileIO.fromPath(path)
+
+          logger.debug(s"Response File content")
+          complete(
+            HttpResponse(
+              entity = HttpEntity(
+                ContentType(MediaTypes.`text/plain`, HttpCharsets.`UTF-8`),
+                Files.size(path),
+                from)))
+        } ~ (put & extractRequestEntity) { entity =>
+          logger.debug(s"Upload Single Requiest")
+
+          val target = req.uri.path.toString().replace("..", "")
+          val to = FileIO.toPath(Paths.get("./data" + target))
+          val res = entity.dataBytes.via(AwsSig4StreamStage.graph).runWith(to)
+          onSuccess(res) { res =>
+            complete("")
           }
         }
+      } ~ (get & pathSingleSlash) { // サービスに対しての操作
+        logger.debug(s"ListAllMyBucketsResult")
+        complete(ListAllMyBucketsResult("owner", "UUID", List(Bucket("example-bucket", OffsetDateTime.now()))))
       }
     }
   }
 
   // .で区切られたドメインの最初の部分を返すだけ
   def extractBucket: Directive1[String] = {
+    val domainSuffix = ".localhost"
     extractUri
       .map(_.authority.host.address())
-      .map(_.split('.').head)
+      .flatMap { host =>
+        if (host.endsWith(domainSuffix)) provide(host.dropRight(domainSuffix.length))
+        else reject()
+      }
   }
 }
 
 case class ErrorResponse(error: String)
+

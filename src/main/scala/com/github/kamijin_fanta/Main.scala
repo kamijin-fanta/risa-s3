@@ -3,7 +3,7 @@ package com.github.kamijin_fanta
 import akka.actor.ActorSystem
 
 import scala.concurrent.ExecutionContextExecutor
-import scala.util.{Failure, Success}
+import scala.util.{ Failure, Success }
 
 object Main {
   var stop = false

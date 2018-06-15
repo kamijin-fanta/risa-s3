@@ -3,10 +3,10 @@ package com.github.kamijin_fanta
 import java.net.URLEncoder
 
 import akka.http.scaladsl.model.headers.RawHeader
-import akka.http.scaladsl.model.{HttpResponse, StatusCodes}
-import akka.http.scaladsl.server.Directives.{complete, extractRequest, extractRequestEntity, onSuccess, respondWithHeaders, withRequestTimeoutResponse}
+import akka.http.scaladsl.model.{ HttpResponse, StatusCodes }
+import akka.http.scaladsl.server.Directives.{ complete, extractRequest, extractRequestEntity, onSuccess, respondWithHeaders, withRequestTimeoutResponse }
 import akka.http.scaladsl.server._
-import com.github.kamijin_fanta.aws4.{AWS4Signer, AccessCredential, AccountProvider, AuthError}
+import com.github.kamijin_fanta.aws4.{ AWS4Signer, AccessCredential, AccountProvider, AuthError }
 import com.typesafe.scalalogging.Logger
 
 object HttpDirectives extends JsonMarshallSupport {
@@ -46,8 +46,12 @@ object HttpDirectives extends JsonMarshallSupport {
     (extractRequest & extractRequestEntity)
       .tflatMap {
         case (req, entity) =>
-          val contentType = RawHeader("Content-Type", entity.contentType.toString())
-          val headers = req.headers :+ contentType
+          // AkkaHTTPがおせっかい機能でContentType/ContentLengthをentityに移動させるので復活させる
+          val additionalHeader =
+            Seq(RawHeader("Content-Type", entity.contentType.toString())) ++
+              entity.contentLengthOption.map(l => RawHeader("Content-Length", l.toString)).toList
+
+          val headers = req.headers ++ additionalHeader
           val accessKey = AWS4Signer.extractAccessKey(headers)
           onSuccess(accountProvider.findAccessKey(accessKey))
             .map(r => r.getOrElse(throw AuthError()))

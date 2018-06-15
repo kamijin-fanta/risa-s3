@@ -60,6 +60,7 @@ object AWS4Signer {
     val canonicalReq = AWS4Signer.canonicalRequest(method, path, query, canonicalHeader, auth.signedHeaders, contentHash)
     val amzDatetime = headers.find(_.name().toLowerCase == "x-amz-date").map(_.value()).getOrElse("")
     val amzDate = amzDatetime.substring(0, 8)
+    //    println(s"CnonicalRequest $canonicalReq")
 
     val signingKey = AWS4Signer.genSignatureKey(secretAccessKey, amzDate, auth.credential.region, auth.credential.service)
     val stringToSign = AWS4Signer.stringToSign(auth.algorithm, amzDatetime, auth.credential.scope, canonicalReq)

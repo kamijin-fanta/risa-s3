@@ -1,6 +1,6 @@
 package com.github.kamijin_fanta.response
 
-import java.time.{OffsetDateTime, ZoneOffset, ZonedDateTime}
+import java.time.{ OffsetDateTime, ZoneOffset, ZonedDateTime }
 
 import scala.xml.Elem
 

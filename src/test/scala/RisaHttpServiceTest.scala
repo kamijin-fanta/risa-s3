@@ -1,3 +1,5 @@
+import java.io.File
+
 import akka.actor.ActorSystem
 import awscala.Region
 import awscala.s3.S3
@@ -5,6 +7,7 @@ import com.github.kamijin_fanta.RisaHttpService
 import org.scalatest.{ BeforeAndAfterAll, FunSpec, Matchers }
 
 import scala.concurrent.ExecutionContextExecutor
+import scala.io.Source
 
 class RisaHttpServiceTest extends FunSpec with Matchers with BeforeAndAfterAll {
   implicit val system: ActorSystem = ActorSystem("test")
@@ -31,8 +34,14 @@ class RisaHttpServiceTest extends FunSpec with Matchers with BeforeAndAfterAll {
       s3.setEndpoint(s"http://localhost:${port}")
       val bucket = s3.bucket("example-bucket")
       assert(bucket.isDefined)
+
       val list = bucket.get.ls("/")
-      println(list)
+      println(list.toList)
+
+      bucket.get.putObject("example.txt", new File(getClass.getResource("./example.txt").getFile))
+
+      val file = bucket.get.get("example.txt")
+      println(Source.fromInputStream(file.get.content).getLines().mkString("\n"))
     }
   }
 }
