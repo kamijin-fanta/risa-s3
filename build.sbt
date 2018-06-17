@@ -18,6 +18,7 @@ libraryDependencies ++= Seq(
   "com.github.seratch" %% "awscala" % "0.7.1",
   "com.typesafe.scala-logging" %% "scala-logging" % "3.7.2",
   "ch.qos.logback" % "logback-classic" % "1.2.3",
+  "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
 
   // test
   "org.scalatest" %% "scalatest" % "3.0.1" % Test,

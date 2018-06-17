@@ -1,6 +1,8 @@
 package com.github.kamijin_fanta
 
-import java.nio.file.{ Files, Paths }
+import java.io.IOException
+import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file._
 import java.time.OffsetDateTime
 
 import akka.actor.ActorSystem
@@ -9,13 +11,15 @@ import akka.http.scaladsl.Http.ServerBinding
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server._
-import akka.stream.scaladsl.FileIO
-import akka.stream.{ ActorMaterializer, Materializer }
+import akka.stream.scaladsl.{ FileIO, Source }
+import akka.stream.{ ActorMaterializer, IOResult, Materializer }
+import akka.util.ByteString
 import com.github.kamijin_fanta.aws4.{ AccessCredential, AccountProvider, AwsSig4StreamStage }
-import com.github.kamijin_fanta.response.{ Bucket, Content, ListAllMyBucketsResult, ListBucketResult }
+import com.github.kamijin_fanta.response._
 import com.typesafe.scalalogging.LazyLogging
 
 import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
+import scala.compat.java8.StreamConverters._
 
 case class RisaHttpService(port: Int)(implicit system: ActorSystem)
   extends LazyLogging with JsonMarshallSupport with XmlMarshallSupport {
@@ -85,18 +89,63 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem)
                 ContentType(MediaTypes.`text/plain`, HttpCharsets.`UTF-8`),
                 Files.size(path),
                 from)))
-        } ~ (put & parameter('uploads)) { u =>
-          logger.debug(s"Start multipart upload")
-
-          complete("")
-        } ~ (put & extractRequestEntity) { entity =>
+        } ~ (put & extractRequestEntity & parameters('partNumber.?, 'uploadId.?)) { (entity, partNum, uploadId) =>
           logger.debug(s"Upload Single Request")
 
-          val target = req.uri.path.toString().replace("..", "")
+          val multipart = for {
+            num <- partNum
+            id <- uploadId
+          } yield (num, id)
+
+          val target = multipart match {
+            case Some((num, id)) =>
+              // like: /tmp/UPLOAD_ID/0000000001
+              "/tmp/" + id.replace("..", "") + "/" + ("0" * (10 - num.length)) + num
+            case None => req.uri.path.toString().replace("..", "")
+          }
           val to = FileIO.toPath(Paths.get("./data" + target))
           val res = entity.dataBytes.via(AwsSig4StreamStage.graph).runWith(to)
           onSuccess(res) { res =>
             complete("")
+          }
+        } ~ (post & parameter('uploads)) { u =>
+          logger.debug(s"Start multipart upload")
+          val uploadId = System.currentTimeMillis().toString
+          Files.createDirectories(Paths.get("./data/tmp/" + uploadId))
+
+          complete(InitiateMultipartUploadResult(bucket, req.uri.path.toString(), uploadId))
+        } ~ (post & parameter('uploadId)) { uploadId =>
+          logger.debug(s"Complete multipart upload")
+
+          // todo etag
+
+          val dir = "./data/tmp/" + (uploadId.replace("..", ""))
+          val key = req.uri.path.toString().replace("..", "")
+
+          val fileList = Files.list(Paths.get(dir + "/"))
+          val sorted = fileList.toScala[Seq].sortBy(_.getFileName)
+          val sources = sorted.map(p => FileIO.fromPath(p)).toList
+          val concat = Source.zipN[ByteString](sources).flatMapConcat(Source.apply)
+
+          val toPath = Paths.get("./data/" + key)
+          val toFile = FileIO.toPath(toPath)
+
+          val res = concat.runWith(toFile)
+          onSuccess(res) { ioRes =>
+            val visitor = new SimpleFileVisitor[Path] {
+
+              override def postVisitDirectory(dir: Path, exc: IOException): FileVisitResult = {
+                Files.delete(dir)
+                FileVisitResult.CONTINUE
+              }
+
+              override def visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult = {
+                Files.delete(file)
+                FileVisitResult.CONTINUE
+              }
+            }
+            Files.walkFileTree(Paths.get(dir), visitor)
+            complete(CompleteMultipartUploadResult(s"http://$bucket${conf.domainSuffix}$key", bucket, key, "ETAG"))
           }
         }
       } ~ (get & pathSingleSlash) { // サービスに対しての操作
