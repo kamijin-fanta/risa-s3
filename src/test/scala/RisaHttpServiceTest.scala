@@ -34,17 +34,26 @@ class RisaHttpServiceTest extends FunSpec with Matchers with BeforeAndAfterAll {
     // *.local.dempa.moeで常に127.0.0.1を返すドメイン名
     s3.setEndpoint(s"http://local.dempa.moe:$port")
 
+    var bucket: Bucket = null
+
     it("bucket") {
-      val bucket: Option[Bucket] = s3.bucket("example-bucket")
-      assert(bucket.isDefined)
+      val _bucket: Option[Bucket] = s3.bucket("example-bucket")
+      assert(_bucket.isDefined)
+      bucket = _bucket.get
+    }
+    it("list") {
+      val list = bucket.ls("/")
+      assert(list.nonEmpty)
+      assert(list.head.right.get.bucket.name == "example-bucket")
+    }
+    it("put/get object") {
+      bucket.putObject("example.txt", new File(getClass.getResource("./example.txt").getFile))
 
-      val list = bucket.get.ls("/")
-      println(list.toList)
+      val file = bucket.get("example.txt")
+      assert(Source.fromInputStream(file.get.content).getLines().mkString("\n") == "hogeeeeeeeeeeeee!!!!!!!!!")
+    }
+    it("multipart") {
 
-      bucket.get.putObject("example.txt", new File(getClass.getResource("./example.txt").getFile))
-
-      val file = bucket.get.get("example.txt")
-      println(Source.fromInputStream(file.get.content).getLines().mkString("\n"))
     }
   }
 }

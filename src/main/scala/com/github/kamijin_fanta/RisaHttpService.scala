@@ -85,8 +85,12 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem)
                 ContentType(MediaTypes.`text/plain`, HttpCharsets.`UTF-8`),
                 Files.size(path),
                 from)))
+        } ~ (put & parameter('uploads)) { u =>
+          logger.debug(s"Start multipart upload")
+
+          complete("")
         } ~ (put & extractRequestEntity) { entity =>
-          logger.debug(s"Upload Single Requiest")
+          logger.debug(s"Upload Single Request")
 
           val target = req.uri.path.toString().replace("..", "")
           val to = FileIO.toPath(Paths.get("./data" + target))
