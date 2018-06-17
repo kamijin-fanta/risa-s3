@@ -15,7 +15,7 @@ libraryDependencies ++= Seq(
   "org.json4s" %% "json4s-native" % "3.5.2",
   "com.github.nscala-time" %% "nscala-time" % "2.16.0",
   "com.typesafe" % "config" % "1.3.1",
-  "com.github.seratch" %% "awscala" % "0.6.1",
+  "com.github.seratch" %% "awscala" % "0.7.1",
   "com.typesafe.scala-logging" %% "scala-logging" % "3.7.2",
   "ch.qos.logback" % "logback-classic" % "1.2.3",
 
@@ -28,9 +28,12 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-stream-testkit" % "2.5.13" % Test,
 
   // akka http
-  "com.typesafe.akka" %% "akka-http" % "10.1.1",
-  "com.typesafe.akka" %% "akka-http-testkit" % "10.1.1" % Test
+  "com.typesafe.akka" %% "akka-http" % "10.1.3",
+  "com.typesafe.akka" %% "akka-http-testkit" % "10.1.3" % Test
 )
 
 
 (fork in Test) := true
+
+// java9 support https://github.com/aws/aws-sdk-java/issues/1092
+(javaOptions in Test) += "--add-modules=java.xml.bind,java.activation"

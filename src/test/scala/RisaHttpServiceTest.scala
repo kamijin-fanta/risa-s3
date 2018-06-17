@@ -2,7 +2,7 @@ import java.io.File
 
 import akka.actor.ActorSystem
 import awscala.Region
-import awscala.s3.S3
+import awscala.s3.{ Bucket, S3 }
 import com.github.kamijin_fanta.RisaHttpService
 import org.scalatest.{ BeforeAndAfterAll, FunSpec, Matchers }
 
@@ -28,11 +28,14 @@ class RisaHttpServiceTest extends FunSpec with Matchers with BeforeAndAfterAll {
   }
 
   describe("s3") {
+    implicit val region = Region.Tokyo
+    implicit val s3 = S3("accessKey", "secret")
+
+    // *.local.dempa.moeで常に127.0.0.1を返すドメイン名
+    s3.setEndpoint(s"http://local.dempa.moe:$port")
+
     it("bucket") {
-      implicit val region = Region.Tokyo
-      implicit val s3 = S3("accessKey", "secret")
-      s3.setEndpoint(s"http://localhost:${port}")
-      val bucket = s3.bucket("example-bucket")
+      val bucket: Option[Bucket] = s3.bucket("example-bucket")
       assert(bucket.isDefined)
 
       val list = bucket.get.ls("/")

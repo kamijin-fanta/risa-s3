@@ -24,6 +24,7 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem)
   def run()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
     implicit val mat: ActorMaterializer = ActorMaterializer()
     implicit val ctx: ExecutionContext = system.dispatcher
+    implicit val config = ApplicationConfig.load()
 
     Http()
       .bindAndHandle(wrappedRootRoute, "0.0.0.0", port)
@@ -45,11 +46,11 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem)
     }
   }
 
-  def wrappedRootRoute(implicit mat: Materializer, ctx: ExecutionContext): Route = (HttpDirectives.timeoutHandler & HttpDirectives.baseResponseHeader) {
+  def wrappedRootRoute(implicit mat: Materializer, ctx: ExecutionContext, conf: ApplicationConfig): Route = (HttpDirectives.timeoutHandler & HttpDirectives.baseResponseHeader) {
     errorHandleRoute
   }
 
-  def errorHandleRoute(implicit mat: Materializer, ctx: ExecutionContext): Route = (
+  def errorHandleRoute(implicit mat: Materializer, ctx: ExecutionContext, conf: ApplicationConfig): Route = (
     handleRejections(HttpDirectives.rejectionHandler) &
     handleExceptions(HttpDirectives.exceptionHandler(logger))) {
       rootRoute
@@ -61,11 +62,12 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem)
     }
   }
 
-  def rootRoute(implicit mat: Materializer, ctx: ExecutionContext): Route = {
+  def rootRoute(implicit mat: Materializer, ctx: ExecutionContext, conf: ApplicationConfig): Route = {
     (HttpDirectives.extractAws4(MockAccountProvider) & extractRequest) { (key, req) =>
       logger.debug(s"Success Auth: $key Request: ${req.method.value} ${req.uri}")
 
-      extractBucket { bucket => // バケットに対しての操作
+      extractBucket(conf.domainSuffix) { bucket => // バケットに対しての操作
+        logger.debug(s"Bucket: $bucket")
         (get & pathSingleSlash & parameters('prefix.?, 'marker.?)) { (prefix, maker) =>
           logger.debug(s"ListBucketResult bucket: $bucket")
           val contents = List(Content("example-file.txt", OffsetDateTime.now(), "0000", 123, "STANDARD"))
@@ -101,8 +103,7 @@ case class RisaHttpService(port: Int)(implicit system: ActorSystem)
   }
 
   // .で区切られたドメインの最初の部分を返すだけ
-  def extractBucket: Directive1[String] = {
-    val domainSuffix = ".localhost"
+  def extractBucket(domainSuffix: String): Directive1[String] = {
     extractUri
       .map(_.authority.host.address())
       .flatMap { host =>
