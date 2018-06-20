@@ -1,7 +1,5 @@
 package com.github.kamijin_fanta.aws4
 
-import java.nio.ByteBuffer
-
 import akka.stream.scaladsl.Flow
 import akka.stream.stage.{ GraphStage, GraphStageLogic, InHandler, OutHandler }
 import akka.stream.{ Attributes, FlowShape, Inlet, Outlet }

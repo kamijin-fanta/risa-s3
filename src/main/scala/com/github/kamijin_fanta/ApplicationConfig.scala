@@ -3,15 +3,15 @@ package com.github.kamijin_fanta
 import com.typesafe.config.ConfigFactory
 
 case class ApplicationConfig(
-                              domainSuffix: String,
-)
+  domainSuffix: String,
+  role: String)
 
 object ApplicationConfig {
   def load(): ApplicationConfig = {
     val conf = ConfigFactory.defaultApplication().getConfig("risa")
 
     ApplicationConfig(
-      domainSuffix = conf.getString("domain-suffix")
-    )
+      domainSuffix = conf.getString("domain-suffix"),
+      role = conf.getString("role"))
   }
 }

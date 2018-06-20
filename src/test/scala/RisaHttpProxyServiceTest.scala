@@ -4,6 +4,7 @@ import akka.actor.ActorSystem
 import awscala.Region
 import awscala.s3.{ Bucket, S3 }
 import com.amazonaws.services.s3.model.{ CompleteMultipartUploadRequest, InitiateMultipartUploadRequest, PartETag, UploadPartRequest }
+import com.github.kamijin_fanta.ApplicationConfig
 import com.github.kamijin_fanta.proxy.RisaHttpProxyService
 import org.scalatest.{ BeforeAndAfterAll, FunSpec, Matchers }
 
@@ -14,6 +15,7 @@ import scala.io.Source
 class RisaHttpProxyServiceTest extends FunSpec with Matchers with BeforeAndAfterAll {
   implicit val system: ActorSystem = ActorSystem("test")
   implicit val ctx: ExecutionContextExecutor = system.dispatcher
+  implicit val config: ApplicationConfig = ApplicationConfig.load()
   val port = 9555
   var httpService: RisaHttpProxyService = _
 

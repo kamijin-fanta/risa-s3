@@ -1,8 +1,8 @@
 package com.github.kamijin_fanta.proxy
 
 import java.io.IOException
-import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file._
+import java.nio.file.attribute.BasicFileAttributes
 import java.time.OffsetDateTime
 
 import akka.actor.ActorSystem
@@ -12,24 +12,23 @@ import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server._
 import akka.stream.scaladsl.{ FileIO, Source }
-import akka.stream.{ ActorMaterializer, IOResult, Materializer }
+import akka.stream.{ ActorMaterializer, Materializer }
 import akka.util.ByteString
 import com.github.kamijin_fanta.ApplicationConfig
 import com.github.kamijin_fanta.aws4.{ AccessCredential, AccountProvider, AwsSig4StreamStage }
 import com.github.kamijin_fanta.response._
-import com.typesafe.scalalogging.LazyLogging
+import com.typesafe.scalalogging.{ LazyLogging, Logger }
 
-import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
 import scala.compat.java8.StreamConverters._
+import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
 
-case class RisaHttpProxyService(port: Int)(implicit system: ActorSystem)
+case class RisaHttpProxyService(port: Int)(implicit applicationConfig: ApplicationConfig, system: ActorSystem)
   extends LazyLogging with JsonMarshallSupport with XmlMarshallSupport {
   private var bind: ServerBinding = _
 
   def run()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
     implicit val mat: ActorMaterializer = ActorMaterializer()
     implicit val ctx: ExecutionContext = system.dispatcher
-    implicit val config = ApplicationConfig.load()
 
     Http()
       .bindAndHandle(wrappedRootRoute, "0.0.0.0", port)
@@ -51,14 +50,15 @@ case class RisaHttpProxyService(port: Int)(implicit system: ActorSystem)
     }
   }
 
-  def wrappedRootRoute(implicit mat: Materializer, ctx: ExecutionContext, conf: ApplicationConfig): Route = (HttpDirectives.timeoutHandler & HttpDirectives.baseResponseHeader) {
-    errorHandleRoute
-  }
+  def wrappedRootRoute(implicit mat: Materializer, ctx: ExecutionContext): Route =
+    (HttpDirectives.timeoutHandler & HttpDirectives.baseResponseHeader) {
+      errorHandleRoute
+    }
 
-  def errorHandleRoute(implicit mat: Materializer, ctx: ExecutionContext, conf: ApplicationConfig): Route = (
+  def errorHandleRoute(implicit mat: Materializer, ctx: ExecutionContext): Route = (
     handleRejections(HttpDirectives.rejectionHandler) &
     handleExceptions(HttpDirectives.exceptionHandler(logger))) {
-      rootRoute
+      RisaHttpProxyService.rootRoute(MockAccountProvider, logger)
     }
 
   object MockAccountProvider extends AccountProvider {
@@ -67,8 +67,12 @@ case class RisaHttpProxyService(port: Int)(implicit system: ActorSystem)
     }
   }
 
-  def rootRoute(implicit mat: Materializer, ctx: ExecutionContext, conf: ApplicationConfig): Route = {
-    (HttpDirectives.extractAws4(MockAccountProvider) & extractRequest) { (key, req) =>
+}
+
+object RisaHttpProxyService extends JsonMarshallSupport with XmlMarshallSupport {
+
+  def rootRoute(accountProvider: AccountProvider, logger: Logger)(implicit mat: Materializer, ctx: ExecutionContext, conf: ApplicationConfig): Route = {
+    (HttpDirectives.extractAws4(accountProvider) & extractRequest) { (key, req) =>
       logger.debug(s"Success Auth: $key Request: ${req.method.value} ${req.uri}")
 
       extractBucket(conf.domainSuffix) { bucket => // バケットに対しての操作
