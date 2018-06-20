@@ -4,23 +4,22 @@ import akka.actor.ActorSystem
 import awscala.Region
 import awscala.s3.{ Bucket, S3 }
 import com.amazonaws.services.s3.model.{ CompleteMultipartUploadRequest, InitiateMultipartUploadRequest, PartETag, UploadPartRequest }
-import com.amazonaws.services.s3.transfer.internal.CompleteMultipartUpload
-import com.github.kamijin_fanta.RisaHttpService
+import com.github.kamijin_fanta.proxy.RisaHttpProxyService
 import org.scalatest.{ BeforeAndAfterAll, FunSpec, Matchers }
 
+import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContextExecutor
 import scala.io.Source
-import scala.collection.JavaConverters._
 
-class RisaHttpServiceTest extends FunSpec with Matchers with BeforeAndAfterAll {
+class RisaHttpProxyServiceTest extends FunSpec with Matchers with BeforeAndAfterAll {
   implicit val system: ActorSystem = ActorSystem("test")
   implicit val ctx: ExecutionContextExecutor = system.dispatcher
   val port = 9555
-  var httpService: RisaHttpService = _
+  var httpService: RisaHttpProxyService = _
 
   override def beforeAll(): Unit = {
     super.beforeAll()
-    httpService = RisaHttpService(port)
+    httpService = RisaHttpProxyService(port)
     httpService.run()
   }
 

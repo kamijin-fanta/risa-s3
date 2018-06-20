@@ -1,4 +1,4 @@
-package com.github.kamijin_fanta
+package com.github.kamijin_fanta.proxy
 
 import akka.http.scaladsl.marshalling.{ Marshaller, ToEntityMarshaller }
 import akka.http.scaladsl.model.{ ContentTypes, HttpEntity }

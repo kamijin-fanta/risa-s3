@@ -1,6 +1,7 @@
 package com.github.kamijin_fanta
 
 import akka.actor.ActorSystem
+import com.github.kamijin_fanta.proxy.RisaHttpProxyService
 
 import scala.concurrent.ExecutionContextExecutor
 import scala.util.{ Failure, Success }
@@ -12,7 +13,7 @@ object Main {
 
   def main(args: Array[String]): Unit = {
     try {
-      val httpService = RisaHttpService(9550)
+      val httpService = RisaHttpProxyService(9550)
 
       httpService.run().onComplete {
         case Success(_) =>

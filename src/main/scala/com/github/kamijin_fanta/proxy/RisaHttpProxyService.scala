@@ -1,4 +1,4 @@
-package com.github.kamijin_fanta
+package com.github.kamijin_fanta.proxy
 
 import java.io.IOException
 import java.nio.file.attribute.BasicFileAttributes
@@ -14,6 +14,7 @@ import akka.http.scaladsl.server._
 import akka.stream.scaladsl.{ FileIO, Source }
 import akka.stream.{ ActorMaterializer, IOResult, Materializer }
 import akka.util.ByteString
+import com.github.kamijin_fanta.ApplicationConfig
 import com.github.kamijin_fanta.aws4.{ AccessCredential, AccountProvider, AwsSig4StreamStage }
 import com.github.kamijin_fanta.response._
 import com.typesafe.scalalogging.LazyLogging
@@ -21,7 +22,7 @@ import com.typesafe.scalalogging.LazyLogging
 import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
 import scala.compat.java8.StreamConverters._
 
-case class RisaHttpService(port: Int)(implicit system: ActorSystem)
+case class RisaHttpProxyService(port: Int)(implicit system: ActorSystem)
   extends LazyLogging with JsonMarshallSupport with XmlMarshallSupport {
   private var bind: ServerBinding = _
 
