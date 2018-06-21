@@ -55,5 +55,4 @@ assemblyMergeStrategy in assembly := {
 
 (fork in Test) := true
 
-// java9 support https://github.com/aws/aws-sdk-java/issues/1092
-(javaOptions in Test) += "--add-modules=java.xml.bind,java.activation"
+(javaOptions in Test) += JvmOptions.options
