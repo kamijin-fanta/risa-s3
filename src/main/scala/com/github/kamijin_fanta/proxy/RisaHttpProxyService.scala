@@ -16,29 +16,30 @@ import akka.stream.{ ActorMaterializer, Materializer }
 import akka.util.ByteString
 import com.github.kamijin_fanta.ApplicationConfig
 import com.github.kamijin_fanta.aws4.{ AccessCredential, AccountProvider, AwsSig4StreamStage }
+import com.github.kamijin_fanta.common.TerminableService
 import com.github.kamijin_fanta.response._
 import com.typesafe.scalalogging.{ LazyLogging, Logger }
 
 import scala.compat.java8.StreamConverters._
 import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
 
-case class RisaHttpProxyService(port: Int)(implicit applicationConfig: ApplicationConfig, system: ActorSystem)
-  extends LazyLogging with JsonMarshallSupport with XmlMarshallSupport {
+case class RisaHttpProxyService(implicit applicationConfig: ApplicationConfig, system: ActorSystem)
+  extends LazyLogging with JsonMarshallSupport with XmlMarshallSupport with TerminableService {
   private var bind: ServerBinding = _
 
-  def run()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
+  override def run()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
     implicit val mat: ActorMaterializer = ActorMaterializer()
     implicit val ctx: ExecutionContext = system.dispatcher
 
     Http()
-      .bindAndHandle(wrappedRootRoute, "0.0.0.0", port)
+      .bindAndHandle(wrappedRootRoute, "0.0.0.0", applicationConfig.proxyPort)
       .map { b =>
         synchronized(bind = b)
         ()
       }
   }
 
-  def terminate()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
+  override def terminate()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
     if (bind != null) {
       bind.unbind().map { _ =>
         synchronized {

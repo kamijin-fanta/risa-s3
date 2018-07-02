@@ -14,7 +14,7 @@ object Main {
   def main(args: Array[String]): Unit = {
     try {
       implicit val config: ApplicationConfig = ApplicationConfig.load()
-      val httpService = RisaHttpProxyService(9550)
+      val httpService = RisaHttpProxyService()
 
       httpService.run().onComplete {
         case Success(_) =>

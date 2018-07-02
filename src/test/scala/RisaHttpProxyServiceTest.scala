@@ -15,13 +15,13 @@ import scala.io.Source
 class RisaHttpProxyServiceTest extends FunSpec with Matchers with BeforeAndAfterAll {
   implicit val system: ActorSystem = ActorSystem("test")
   implicit val ctx: ExecutionContextExecutor = system.dispatcher
-  implicit val config: ApplicationConfig = ApplicationConfig.load()
   val port = 9555
+  implicit val config: ApplicationConfig = ApplicationConfig.load().copy(proxyPort = port)
   var httpService: RisaHttpProxyService = _
 
   override def beforeAll(): Unit = {
     super.beforeAll()
-    httpService = RisaHttpProxyService(port)
+    httpService = RisaHttpProxyService()
     httpService.run()
   }
 
