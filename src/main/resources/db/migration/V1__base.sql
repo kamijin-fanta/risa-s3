@@ -1,47 +1,54 @@
 create table access_key (
-  key uuid not null primary key,
-  secret string not null,
-  bucket string not null
+  id char(36) not null primary key, -- uuid
+  secret char(64) not null,  -- sha256(rand)
+  bucket char(64) not null
 );
 
 create table bucket (
-  id string not null primary key,
-  owner string not null,
-  unique (id)
+  id varchar(64) not null primary key,
+  owner varchar(64) not null
 );
 
 create table object (
-  bucket string not null,
-  path string not null,
-  version serial not null,
-  file uuid not null,
-  status int not null,
-  hash string not null,
+  bucket varchar(64) not null,
+  path varchar(1024) not null,
+  version datetime not null,
+  file char(36) not null,  -- uuid
+  status int not null,  -- 0: ok, 1: uploading, 2: deleted
+  hash char(64) not null,  -- sha256
   size int not null,
-  unique (bucket, path, version)
+  primary key(bucket, path, version)
 );
 
 create table file (
-  bucket string not null,
-  id uuid not null,
+  bucket varchar(64) not null,
+  id char(36) not null, -- uuid
   number int not null,
-  volume_group string not null,
-  chunk_name string not null,
+  volume_group int not null,
+  chunk_name varchar(128) not null,
   offset_byte int not null,
   size_byte int not null,
-  unique (bucket, id)
+  primary key(bucket, id)
 );
 
 create table volume_group (
-  id string not null primary key,
+  id int not null primary key auto_increment,
   status int not null  -- 0: ok, 1: read-only, 2: dead
 );
 
 create table volume_node (
-  volume_group string not null,
-  id string not null,
-  address string not null, -- 192.168.10.12:9551
-  capacity int not null,
-  free int not null,
-  unique (volume_group, id)
+  id int not null auto_increment,
+  volume_group int not null,
+  address varchar(128) not null, -- 192.168.10.12:9551
+  capacity bigint not null,
+  free bigint not null,
+  primary key(id, volume_group),
+  index(volume_group, id)
+);
+
+create table volume_file (
+  volume_group int not null,
+  tablet varchar(128),
+  name varchar(128),
+  primary key(volume_group, tablet, name)
 );
