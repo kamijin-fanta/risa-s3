@@ -1,7 +1,10 @@
 package com.github.kamijin_fanta
 
 import akka.actor.ActorSystem
+import com.github.kamijin_fanta.common.TerminableService
+import com.github.kamijin_fanta.data.RisaHttpDataService
 import com.github.kamijin_fanta.proxy.RisaHttpProxyService
+import com.typesafe.scalalogging.LazyLogging
 
 import scala.concurrent.ExecutionContextExecutor
 import scala.util.{ Failure, Success }
@@ -14,7 +17,11 @@ object Main {
   def main(args: Array[String]): Unit = {
     try {
       implicit val config: ApplicationConfig = ApplicationConfig.load()
-      val httpService = RisaHttpProxyService()
+      val httpService: TerminableService = config.role match {
+        case "proxy" => RisaHttpProxyService()
+        case "data" => RisaHttpDataService()
+        case x => throw new IllegalArgumentException(s"known role $x")
+      }
 
       httpService.run().onComplete {
         case Success(_) =>

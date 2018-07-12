@@ -15,7 +15,8 @@ import com.github.kamijin_fanta.ApplicationConfig
 import com.github.kamijin_fanta.common.TerminableService
 import com.typesafe.scalalogging.{ LazyLogging, Logger }
 
-import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
+import scala.concurrent.{ Await, ExecutionContext, ExecutionContextExecutor, Future }
+import scala.concurrent.duration._
 
 case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, system: ActorSystem)
   extends LazyLogging with TerminableService {
@@ -24,11 +25,24 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
   override def run()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
     implicit val mat: ActorMaterializer = ActorMaterializer()
     implicit val ctx: ExecutionContext = system.dispatcher
+    println("#######################")
+
+    import slick.jdbc.MySQLProfile.api._
+    val db = slick.jdbc.MySQLProfile.api.Database.forConfig("database")
+    try {
+      val stm = Tables.AccessKey.result
+      println(s"SQL: $stm")
+      val res = db.run(stm)
+      val rows = Await.result(res, 1 seconds).toList
+      println(s"rows: $rows")
+    } finally {
+      db.close()
+    }
 
     Http()
       .bindAndHandle(rootRoute(logger), "0.0.0.0", applicationConfig.data.port)
       .map { b =>
-        synchronized(bind = b)
+        this.synchronized(bind = b)
         ()
       }
   }

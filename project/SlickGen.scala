@@ -6,7 +6,7 @@ object SlickGen extends AutoPlugin {
   //  override lazy val projectSettings = Seq((sourceGenerators in Compile) <<= slickGenCommand)
 
   object autoImport {
-    val slickGen = taskKey[Unit]("gen")
+    val slickGen = taskKey[Seq[File]]("gen")
   }
 
   import autoImport._
@@ -23,7 +23,7 @@ object SlickGen extends AutoPlugin {
     val url = "jdbc:mysql://172.24.2.1:4000/risa"
     val jdbcDriver = "com.mysql.jdbc.Driver"
     val slickDriver = "slick.jdbc.MySQLProfile"
-    val pkg = "demo"
+    val pkg = ""
     val user = "root"
     val pass = ""
 
@@ -34,6 +34,7 @@ object SlickGen extends AutoPlugin {
       Array(slickDriver, jdbcDriver, url, outputDir, pkg, user, pass),
       s.log
     )
-    ()
+    val filename = outputDir + "/Tables.scala"
+    Seq(file(filename))
   }
 }

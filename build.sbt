@@ -63,3 +63,4 @@ assemblyMergeStrategy in assembly := {
 (javaOptions in Test) += JvmOptions.options
 
 enablePlugins(SlickGen)
+(sourceGenerators in Compile) := Seq(SlickGen.slickGenTask.taskValue) // auto scheme generate in compile time
