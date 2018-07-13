@@ -7,20 +7,24 @@ import java.util.UUID
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.Http.ServerBinding
-import akka.http.scaladsl.model.{ ContentTypes, HttpResponse, RequestEntity, StatusCodes }
+import akka.http.scaladsl.model.{ ContentTypes, RequestEntity, StatusCodes }
 import akka.http.scaladsl.server.Route
-import akka.stream.scaladsl.FileIO
-import akka.stream.{ ActorMaterializer, Materializer }
+import akka.stream.scaladsl.{ FileIO, Sink }
+import akka.stream.{ ActorMaterializer, IOResult, Materializer }
+import akka.util.ByteString
 import com.github.kamijin_fanta.ApplicationConfig
 import com.github.kamijin_fanta.common.{ DbServiceComponent, TerminableService }
+import com.github.kamijin_fanta.data.metaProvider.{ LocalMetaBackendService, MetaBackendServiceComponent }
 import com.typesafe.scalalogging.{ LazyLogging, Logger }
 
 import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
 
 case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, system: ActorSystem)
-  extends LazyLogging with TerminableService with DbServiceComponent {
+  extends LazyLogging with TerminableService with DbServiceComponent with MetaBackendServiceComponent {
   private var bind: ServerBinding = _
   var dbService: DbService = _
+
+  override def metaBackendService: LocalMetaBackendService = new LocalMetaBackendService()(system.dispatcher)
 
   override def run()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
     implicit val mat: ActorMaterializer = ActorMaterializer()
@@ -32,6 +36,7 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
     Http()
       .bindAndHandle(rootRoute(logger), "0.0.0.0", applicationConfig.data.port)
       .map { b =>
+        logger.info("listen: " + b.localAddress.toString)
         this.synchronized(bind = b)
         ()
       }
@@ -68,15 +73,24 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
           logger.debug(s"Put new object ContentLength:${length}")
           val iores = for {
             tabletItem <- tabletItemAllocator(length)
-            to = FileIO.toPath(Paths.get(applicationConfig.data.baseDir, tabletItem.tablet, tabletItem.itemName))
+            to = FileIO.toPath(toFile(tabletItem.tablet, tabletItem.itemName).toPath)
             res <- entity.dataBytes.runWith(to)
           } yield (tabletItem, res)
 
           onSuccess(iores) { (tablet, res) =>
+            // todo commit to database
             val path = s"/${tablet.tablet}/${tablet.itemName}"
             complete(path)
           }
         case None => failWith(new AssertionError("need header content-length"))
+      }
+    }
+    def internalNewFile(entity: RequestEntity, tablet: String, name: String): Route = {
+      val localSink = FileIO.toPath(toFile(tablet, name).toPath)
+      val result = entity.dataBytes.runWith(localSink)
+      onSuccess(result) { res =>
+        if (res.status.isSuccess) complete("ok")
+        else failWith(res.getError)
       }
     }
 
@@ -91,6 +105,14 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
       getFromFile(file, ContentTypes.NoContentType)
     }
     def deleteFile(tablet: String, name: String): Route = {
+      // todo commit to database
+      val file = toFile(tablet, name)
+      logger.debug(s"delete ${file.toPath} ${file.isFile} ${file.canRead}")
+
+      if (file.delete()) complete("ok")
+      else complete(StatusCodes.NotFound, "content not found")
+    }
+    def internalDeleteFile(tablet: String, name: String): Route = {
       val file = toFile(tablet, name)
       logger.debug(s"delete ${file.toPath} ${file.isFile} ${file.canRead}")
 
@@ -109,8 +131,19 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
         }
       }
     } ~ pathPrefix("internal") {
-      (post & extractRequest) { entity =>
-        complete("OK")
+      path("object" / Segment / Segment) { (tablet, name) =>
+        (post & extractRequestEntity) { entity =>
+          internalNewFile(entity, tablet, name)
+        } ~ get {
+          getFile(tablet, name)
+        } ~ delete {
+          internalDeleteFile(tablet, name)
+        }
+      } ~ get {
+        val otherNode = metaBackendService.otherNodes(applicationConfig.data.group, applicationConfig.data.node)
+        onSuccess(otherNode) { res =>
+          complete(s"other: $res")
+        }
       }
     }
   }

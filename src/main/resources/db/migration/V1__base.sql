@@ -25,6 +25,7 @@ create table file (
   id char(36) not null, -- uuid
   number int not null,
   volume_group int not null,
+  status int not null,  -- 0: ok, 1: uploading, 2: deleted
   chunk_name varchar(128) not null,
   offset_byte int not null,
   size_byte int not null,

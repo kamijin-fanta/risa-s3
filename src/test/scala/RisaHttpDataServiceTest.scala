@@ -4,11 +4,13 @@ import akka.http.scaladsl.model._
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import akka.stream.Materializer
 import com.github.kamijin_fanta.ApplicationConfig
+import com.github.kamijin_fanta.common.model.DataNode
 import com.github.kamijin_fanta.data.RisaHttpDataService
+import com.github.kamijin_fanta.data.metaProvider.LocalMetaBackendService
 import org.scalatest.{ BeforeAndAfterAll, FunSpec }
 
 import scala.concurrent.duration._
-import scala.concurrent.{ Await, ExecutionContext, ExecutionContextExecutor }
+import scala.concurrent.{ Await, ExecutionContext, ExecutionContextExecutor, Future }
 
 class RisaHttpDataServiceTest extends FunSpec with BeforeAndAfterAll with ScalatestRouteTest {
   implicit val ctx: ExecutionContextExecutor = system.dispatcher
@@ -21,7 +23,15 @@ class RisaHttpDataServiceTest extends FunSpec with BeforeAndAfterAll with Scalat
 
   override def beforeAll(): Unit = {
     super.beforeAll()
-    httpService = RisaHttpDataService()
+    httpService = new RisaHttpDataService() {
+      override def metaBackendService: LocalMetaBackendService =
+        new LocalMetaBackendService() {
+          override def otherNodes(nodeGroup: String, selfNodeId: String): Future[Seq[DataNode]] = {
+            logger.info("Hook other nodes")
+            super.otherNodes(nodeGroup, selfNodeId)
+          }
+        }
+    }
     httpService.run()
   }
 
@@ -31,15 +41,17 @@ class RisaHttpDataServiceTest extends FunSpec with BeforeAndAfterAll with Scalat
     system.terminate()
   }
 
+  val base = Uri.from(scheme = "http", host = "localhost", port = port)
+
   def blockingRequest(httpRequest: HttpRequest, timeout: Duration = 2 seconds): HttpResponse = {
     Await.result(Http().singleRequest(httpRequest), timeout)
   }
+
   def blockingToStrictString(responseEntity: ResponseEntity, timeout: FiniteDuration = 2 seconds)(implicit ec: ExecutionContext, fm: Materializer): String = {
     Await.result(responseEntity.toStrict(timeout).map(_.data.utf8String), 1 seconds)
   }
 
   it("upload / get / delete") {
-    val base = Uri.from(scheme = "http", host = "localhost", port = port)
     val dummyContent = "a" * 100
 
     val uploadEntity = HttpEntity(dummyContent)
@@ -58,6 +70,30 @@ class RisaHttpDataServiceTest extends FunSpec with BeforeAndAfterAll with Scalat
     assert(delRes.status.isSuccess())
 
     val delRes2 = blockingRequest(HttpRequest(uri = base.withPath(objectPath), method = HttpMethods.DELETE))
+    assert(delRes2.status === StatusCodes.NotFound)
+  }
+
+  it("internal post") {
+    val tablet = "0001"
+    val name = "internal-post-data"
+    val path = Path(s"/internal/object/$tablet/$name")
+
+    val dummyContent = "a" * 100
+    val dummyEntity = HttpEntity(dummyContent)
+    val upRes = blockingRequest(HttpRequest(
+      HttpMethods.POST,
+      uri = base.withPath(path), entity = dummyEntity))
+
+    assert(upRes.status.isSuccess())
+
+    val getRes = blockingRequest(HttpRequest(uri = base.withPath(path)))
+    val getEntity = blockingToStrictString(getRes.entity)
+    assert(dummyContent == getEntity)
+
+    val delRes = blockingRequest(HttpRequest(uri = base.withPath(path), method = HttpMethods.DELETE))
+    assert(delRes.status.isSuccess())
+
+    val delRes2 = blockingRequest(HttpRequest(uri = base.withPath(path), method = HttpMethods.DELETE))
     assert(delRes2.status === StatusCodes.NotFound)
   }
 }
