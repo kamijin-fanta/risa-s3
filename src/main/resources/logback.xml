@@ -9,4 +9,6 @@
         <appender-ref ref="STDOUT" />
         <appender-ref ref="FILE" />
     </root>
+
+    <logger name="com.github.kamijin_fanta" level="DEBUG"/>
 </configuration>

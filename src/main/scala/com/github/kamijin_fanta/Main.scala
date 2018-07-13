@@ -4,7 +4,6 @@ import akka.actor.ActorSystem
 import com.github.kamijin_fanta.common.TerminableService
 import com.github.kamijin_fanta.data.RisaHttpDataService
 import com.github.kamijin_fanta.proxy.RisaHttpProxyService
-import com.typesafe.scalalogging.LazyLogging
 
 import scala.concurrent.ExecutionContextExecutor
 import scala.util.{ Failure, Success }

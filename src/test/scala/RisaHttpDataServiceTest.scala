@@ -7,11 +7,10 @@ import com.github.kamijin_fanta.ApplicationConfig
 import com.github.kamijin_fanta.data.RisaHttpDataService
 import org.scalatest.{ BeforeAndAfterAll, FunSpec }
 
-import scala.concurrent.{ Await, ExecutionContext, ExecutionContextExecutor }
 import scala.concurrent.duration._
+import scala.concurrent.{ Await, ExecutionContext, ExecutionContextExecutor }
 
 class RisaHttpDataServiceTest extends FunSpec with BeforeAndAfterAll with ScalatestRouteTest {
-  //  implicit val system: ActorSystem = ActorSystem("test")
   implicit val ctx: ExecutionContextExecutor = system.dispatcher
   val port = 9556
   implicit val config: ApplicationConfig = {
@@ -39,21 +38,26 @@ class RisaHttpDataServiceTest extends FunSpec with BeforeAndAfterAll with Scalat
     Await.result(responseEntity.toStrict(timeout).map(_.data.utf8String), 1 seconds)
   }
 
-  describe("data") {
+  it("upload / get / delete") {
     val base = Uri.from(scheme = "http", host = "localhost", port = port)
     val dummyContent = "a" * 100
 
-    it("upload") {
-      val entity = HttpEntity(dummyContent)
-      val req = HttpRequest(HttpMethods.POST, base.withPath(Path("/new")), entity = entity)
-      val res = blockingRequest(req)
-      assert(res.status.isSuccess())
-      val storedPath = blockingToStrictString(res.entity)
-      println(storedPath)
+    val uploadEntity = HttpEntity(dummyContent)
+    val uploadReq = HttpRequest(HttpMethods.POST, base.withPath(Path("/object")), entity = uploadEntity)
+    val uploadRes = blockingRequest(uploadReq)
+    assert(uploadRes.status.isSuccess(), "file uploading is fail")
 
-      val getRes = blockingRequest(HttpRequest(uri = base.withPath(Path(storedPath))))
-      val getEntity = blockingToStrictString(getRes.entity)
-      assert(dummyContent == getEntity)
-    }
+    val storedPath = blockingToStrictString(uploadRes.entity)
+    val objectPath = Path(s"/object$storedPath")
+
+    val getRes = blockingRequest(HttpRequest(uri = base.withPath(objectPath)))
+    val getEntity = blockingToStrictString(getRes.entity)
+    assert(dummyContent == getEntity)
+
+    val delRes = blockingRequest(HttpRequest(uri = base.withPath(objectPath), method = HttpMethods.DELETE))
+    assert(delRes.status.isSuccess())
+
+    val delRes2 = blockingRequest(HttpRequest(uri = base.withPath(objectPath), method = HttpMethods.DELETE))
+    assert(delRes2.status === StatusCodes.NotFound)
   }
 }

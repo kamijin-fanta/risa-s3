@@ -7,37 +7,27 @@ import java.util.UUID
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.Http.ServerBinding
-import akka.http.scaladsl.model.{ ContentTypes, RequestEntity }
+import akka.http.scaladsl.model.{ ContentTypes, HttpResponse, RequestEntity, StatusCodes }
 import akka.http.scaladsl.server.Route
 import akka.stream.scaladsl.FileIO
 import akka.stream.{ ActorMaterializer, Materializer }
 import com.github.kamijin_fanta.ApplicationConfig
-import com.github.kamijin_fanta.common.TerminableService
+import com.github.kamijin_fanta.common.{ DbServiceComponent, TerminableService }
 import com.typesafe.scalalogging.{ LazyLogging, Logger }
 
-import scala.concurrent.{ Await, ExecutionContext, ExecutionContextExecutor, Future }
-import scala.concurrent.duration._
+import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
 
 case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, system: ActorSystem)
-  extends LazyLogging with TerminableService {
+  extends LazyLogging with TerminableService with DbServiceComponent {
   private var bind: ServerBinding = _
+  var dbService: DbService = _
 
   override def run()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
     implicit val mat: ActorMaterializer = ActorMaterializer()
     implicit val ctx: ExecutionContext = system.dispatcher
-    println("#######################")
 
-    import slick.jdbc.MySQLProfile.api._
     val db = slick.jdbc.MySQLProfile.api.Database.forConfig("database")
-    try {
-      val stm = Tables.AccessKey.result
-      println(s"SQL: $stm")
-      val res = db.run(stm)
-      val rows = Await.result(res, 1 seconds).toList
-      println(s"rows: $rows")
-    } finally {
-      db.close()
-    }
+    dbService = new DbService(db)
 
     Http()
       .bindAndHandle(rootRoute(logger), "0.0.0.0", applicationConfig.data.port)
@@ -55,7 +45,9 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
         }
       }
     } else {
-      Future {}
+      Future.successful()
+    } map { _ =>
+      if (dbService != null) dbService.terminate()
     }
   }
 
@@ -64,30 +56,62 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
     //    import akka.http.scaladsl.server.Directives.{Segment, complete, extractRequestEntity, get, getFromFile, onSuccess, path, post}
     //    import akka.http.scaladsl.server.RouteConcatenation._
 
-    def newFile(entity: RequestEntity): Route = {
-      logger.debug(s"Put new object ${entity.contentLengthOption.getOrElse("---")}")
+    case class TabletItem(tablet: String, itemName: String)
+    def tabletItemAllocator(capacity: Long): Future[TabletItem] = {
+      val randomName = UUID.randomUUID().toString
+      Future.successful(TabletItem("0001", randomName))
+    }
 
-      val dir = "0001"
-      val filename = UUID.randomUUID().toString
-      val to = FileIO.toPath(Paths.get(applicationConfig.data.baseDir, dir, filename))
-      val res = entity.dataBytes.runWith(to)
-      val path = s"/$dir/$filename"
-      onSuccess(res) { res =>
-        complete(path)
+    def newFile(entity: RequestEntity): Route = {
+      entity.contentLengthOption match {
+        case Some(length) =>
+          logger.debug(s"Put new object ContentLength:${length}")
+          val iores = for {
+            tabletItem <- tabletItemAllocator(length)
+            to = FileIO.toPath(Paths.get(applicationConfig.data.baseDir, tabletItem.tablet, tabletItem.itemName))
+            res <- entity.dataBytes.runWith(to)
+          } yield (tabletItem, res)
+
+          onSuccess(iores) { (tablet, res) =>
+            val path = s"/${tablet.tablet}/${tablet.itemName}"
+            complete(path)
+          }
+        case None => failWith(new AssertionError("need header content-length"))
       }
     }
-    def getFile(dir: String, name: String): Route = {
+
+    def toFile(tablet: String, name: String) = {
       val base = applicationConfig.data.baseDir
-      val path = s"$base/$dir/$name".replace("..", "")
-      val file = new File(path)
-      logger.debug(s"get access $path ${file.isFile} ${file.canRead}")
+      val path = s"$base/$tablet/$name".replace("..", "")
+      new File(path)
+    }
+    def getFile(tablet: String, name: String): Route = {
+      val file = toFile(tablet, name)
+      logger.debug(s"get access ${file.toPath} ${file.isFile} ${file.canRead}")
       getFromFile(file, ContentTypes.NoContentType)
     }
+    def deleteFile(tablet: String, name: String): Route = {
+      val file = toFile(tablet, name)
+      logger.debug(s"delete ${file.toPath} ${file.isFile} ${file.canRead}")
 
-    (post & path("new") & extractRequestEntity) { entity =>
-      newFile(entity)
-    } ~ (get & path(Segment / Segment)) { (dir, name) =>
-      getFile(dir, name)
+      if (file.delete()) complete("ok")
+      else complete(StatusCodes.NotFound, "content not found")
+    }
+
+    pathPrefix("object") {
+      (post & extractRequestEntity) { entity =>
+        newFile(entity)
+      } ~ path(Segment / Segment) { (tablet, name) =>
+        get {
+          getFile(tablet, name)
+        } ~ delete {
+          deleteFile(tablet, name)
+        }
+      }
+    } ~ pathPrefix("internal") {
+      (post & extractRequest) { entity =>
+        complete("OK")
+      }
     }
   }
 }
