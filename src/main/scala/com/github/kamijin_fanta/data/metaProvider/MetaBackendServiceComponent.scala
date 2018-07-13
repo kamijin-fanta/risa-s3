@@ -1,5 +1,6 @@
 package com.github.kamijin_fanta.data.metaProvider
 
+import com.github.kamijin_fanta.ApplicationConfig
 import com.github.kamijin_fanta.common.model.DataNode
 
 import scala.concurrent.{ ExecutionContext, Future }
@@ -17,5 +18,8 @@ class LocalMetaBackendService(implicit ctx: ExecutionContext) {
 
   def otherNodes(nodeGroup: String, selfNodeId: String): Future[Seq[DataNode]] = {
     nodes(nodeGroup).map(_.filterNot(_.nodeId == selfNodeId))
+  }
+  def otherNodes()(implicit applicationConfig: ApplicationConfig): Future[Seq[DataNode]] = {
+    otherNodes(applicationConfig.data.group, applicationConfig.data.node)
   }
 }

@@ -1,22 +1,24 @@
 package com.github.kamijin_fanta.data
 
 import java.io.File
-import java.nio.file.Paths
 import java.util.UUID
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.Http.ServerBinding
-import akka.http.scaladsl.model.{ ContentTypes, RequestEntity, StatusCodes }
+import akka.http.scaladsl.model.Uri.Path
+import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Route
-import akka.stream.scaladsl.{ FileIO, Sink }
-import akka.stream.{ ActorMaterializer, IOResult, Materializer }
+import akka.stream._
+import akka.stream.scaladsl.{ BroadcastHub, FileIO, Keep, Source }
 import akka.util.ByteString
 import com.github.kamijin_fanta.ApplicationConfig
+import com.github.kamijin_fanta.common.model.DataNode
 import com.github.kamijin_fanta.common.{ DbServiceComponent, TerminableService }
 import com.github.kamijin_fanta.data.metaProvider.{ LocalMetaBackendService, MetaBackendServiceComponent }
 import com.typesafe.scalalogging.{ LazyLogging, Logger }
 
+import scala.concurrent.duration._
 import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
 
 case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, system: ActorSystem)
@@ -56,7 +58,7 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
     }
   }
 
-  def rootRoute(logger: Logger)(implicit mat: Materializer, ctx: ExecutionContext, conf: ApplicationConfig): Route = {
+  def rootRoute(logger: Logger)(implicit mat: Materializer, ctx: ExecutionContext): Route = {
     import akka.http.scaladsl.server.Directives._
     //    import akka.http.scaladsl.server.Directives.{Segment, complete, extractRequestEntity, get, getFromFile, onSuccess, path, post}
     //    import akka.http.scaladsl.server.RouteConcatenation._
@@ -67,29 +69,50 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
       Future.successful(TabletItem("0001", randomName))
     }
 
+    def otherNodesRequests(otherNodes: Seq[DataNode], tabletItem: TabletItem, source: Source[ByteString, Any]) = {
+      val requestEntity = HttpEntity(ContentTypes.NoContentType, source)
+      val path = Path(s"/internal/object/${tabletItem.tablet}/${tabletItem.itemName}")
+      val res = otherNodes
+        .map(node => HttpRequest(
+          HttpMethods.POST,
+          Uri(s"http://${node.address}").withPath(path),
+          entity = requestEntity))
+        .map(req => Http().singleRequest(req))
+      Future.sequence(res)
+    }
+
     def newFile(entity: RequestEntity): Route = {
       entity.contentLengthOption match {
         case Some(length) =>
           logger.debug(s"Put new object ContentLength:${length}")
           val iores = for {
             tabletItem <- tabletItemAllocator(length)
+            otherNodes <- metaBackendService.otherNodes()
+            hub = entity.dataBytes.delay(1 micro).runWith(BroadcastHub.sink(16))
             to = FileIO.toPath(toFile(tabletItem.tablet, tabletItem.itemName).toPath)
-            res <- entity.dataBytes.runWith(to)
-          } yield (tabletItem, res)
+            res <- hub.runWith(to)
+            otherNodes <- otherNodesRequests(otherNodes, tabletItem, hub)
+          } yield (tabletItem, res, otherNodes)
 
-          onSuccess(iores) { (tablet, res) =>
+          onSuccess(iores) { (tablet, res, otherNodes) =>
             // todo commit to database
+            // todo http error handling
+            logger.info(s"complete ${tablet} ${res} ${otherNodes}")
             val path = s"/${tablet.tablet}/${tablet.itemName}"
             complete(path)
           }
         case None => failWith(new AssertionError("need header content-length"))
       }
     }
+
     def internalNewFile(entity: RequestEntity, tablet: String, name: String): Route = {
       val localSink = FileIO.toPath(toFile(tablet, name).toPath)
-      val result = entity.dataBytes.runWith(localSink)
+      val source = entity.dataBytes
+
+      val result = source.runWith(localSink)
       onSuccess(result) { res =>
-        if (res.status.isSuccess) complete("ok")
+        logger.info(s"upload complete $res")
+        if (res.wasSuccessful) complete("ok")
         else failWith(res.getError)
       }
     }
@@ -99,11 +122,13 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
       val path = s"$base/$tablet/$name".replace("..", "")
       new File(path)
     }
+
     def getFile(tablet: String, name: String): Route = {
       val file = toFile(tablet, name)
       logger.debug(s"get access ${file.toPath} ${file.isFile} ${file.canRead}")
       getFromFile(file, ContentTypes.NoContentType)
     }
+
     def deleteFile(tablet: String, name: String): Route = {
       // todo commit to database
       val file = toFile(tablet, name)
@@ -112,6 +137,7 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
       if (file.delete()) complete("ok")
       else complete(StatusCodes.NotFound, "content not found")
     }
+
     def internalDeleteFile(tablet: String, name: String): Route = {
       val file = toFile(tablet, name)
       logger.debug(s"delete ${file.toPath} ${file.isFile} ${file.canRead}")

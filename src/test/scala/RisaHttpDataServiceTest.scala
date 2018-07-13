@@ -3,6 +3,7 @@ import akka.http.scaladsl.model.Uri.Path
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import akka.stream.Materializer
+import akka.stream.scaladsl.{ BroadcastHub, Keep, Sink, Source }
 import com.github.kamijin_fanta.ApplicationConfig
 import com.github.kamijin_fanta.common.model.DataNode
 import com.github.kamijin_fanta.data.RisaHttpDataService
@@ -20,24 +21,38 @@ class RisaHttpDataServiceTest extends FunSpec with BeforeAndAfterAll with Scalat
     app.copy(data = app.data.copy(port = port))
   }
   var httpService: RisaHttpDataService = _
+  var httpService2: RisaHttpDataService = _
 
   override def beforeAll(): Unit = {
     super.beforeAll()
+    val nodeList = Seq(
+      DataNode("DC-A-0001", "1", s"localhost:${port}"),
+      DataNode("DC-A-0001", "2", s"localhost:${port + 1}"))
     httpService = new RisaHttpDataService() {
       override def metaBackendService: LocalMetaBackendService =
         new LocalMetaBackendService() {
-          override def otherNodes(nodeGroup: String, selfNodeId: String): Future[Seq[DataNode]] = {
-            logger.info("Hook other nodes")
-            super.otherNodes(nodeGroup, selfNodeId)
+          override def nodes(nodeGroup: String): Future[Seq[DataNode]] = {
+            Future.successful(nodeList)
+          }
+        }
+    }
+    val config2 = config.copy(data = config.data.copy(port = port + 1, baseDir = "./data2"))
+    httpService2 = new RisaHttpDataService()(config2, system) {
+      override def metaBackendService: LocalMetaBackendService =
+        new LocalMetaBackendService() {
+          override def nodes(nodeGroup: String): Future[Seq[DataNode]] = {
+            Future.successful(nodeList)
           }
         }
     }
     httpService.run()
+    httpService2.run()
   }
 
   override def afterAll(): Unit = {
     super.afterAll()
     httpService.terminate()
+    httpService2.terminate()
     system.terminate()
   }
 
@@ -71,6 +86,14 @@ class RisaHttpDataServiceTest extends FunSpec with BeforeAndAfterAll with Scalat
 
     val delRes2 = blockingRequest(HttpRequest(uri = base.withPath(objectPath), method = HttpMethods.DELETE))
     assert(delRes2.status === StatusCodes.NotFound)
+  }
+
+  it("stream test") {
+    val rawSource = Source(1 to 5).runWith(BroadcastHub.sink(128))
+    assert(Await.result(rawSource.delay(1 second).runWith(Sink.seq), 10 seconds) == Vector())
+
+    val deleySource = Source(1 to 5).delay(1 micro).runWith(BroadcastHub.sink(128))
+    assert(Await.result(deleySource.delay(1 second).runWith(Sink.seq), 10 seconds) == (1 to 5))
   }
 
   it("internal post") {
