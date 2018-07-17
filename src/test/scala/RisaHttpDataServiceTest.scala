@@ -30,7 +30,7 @@ class RisaHttpDataServiceTest extends FunSpec with BeforeAndAfterAll with Scalat
       DataNode("DC-A-0001", "2", s"localhost:${port + 1}"))
     httpService = new RisaHttpDataService() {
       override def metaBackendService: LocalMetaBackendService =
-        new LocalMetaBackendService() {
+        new LocalMetaBackendService(dbService) {
           override def nodes(nodeGroup: String): Future[Seq[DataNode]] = {
             Future.successful(nodeList)
           }
@@ -39,7 +39,7 @@ class RisaHttpDataServiceTest extends FunSpec with BeforeAndAfterAll with Scalat
     val config2 = config.copy(data = config.data.copy(port = port + 1, baseDir = "./data2"))
     httpService2 = new RisaHttpDataService()(config2, system) {
       override def metaBackendService: LocalMetaBackendService =
-        new LocalMetaBackendService() {
+        new LocalMetaBackendService(dbService) {
           override def nodes(nodeGroup: String): Future[Seq[DataNode]] = {
             Future.successful(nodeList)
           }

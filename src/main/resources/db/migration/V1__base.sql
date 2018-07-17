@@ -26,7 +26,7 @@ create table file (
   number int not null,
   volume_group int not null,
   status int not null,  -- 0: ok, 1: uploading, 2: deleted
-  chunk_name varchar(128) not null,
+  volume_file_name varchar(256) not null,
   offset_byte int not null,
   size_byte int not null,
   primary key(bucket, id)
@@ -48,8 +48,9 @@ create table volume_node (
 );
 
 create table volume_file (
-  volume_group int not null,
+  volume_group int,
   tablet varchar(128),
   name varchar(128),
+  hash char(64) not null,  -- sha256
   primary key(volume_group, tablet, name)
 );

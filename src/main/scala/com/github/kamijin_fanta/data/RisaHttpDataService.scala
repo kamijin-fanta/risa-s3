@@ -14,7 +14,7 @@ import akka.stream.scaladsl.{ Broadcast, BroadcastHub, FileIO, Keep, Source }
 import akka.util.ByteString
 import com.github.kamijin_fanta.ApplicationConfig
 import com.github.kamijin_fanta.common.model.DataNode
-import com.github.kamijin_fanta.common.{ DbServiceComponent, TerminableService }
+import com.github.kamijin_fanta.common.{ DbService, DbServiceComponent, TerminableService }
 import com.github.kamijin_fanta.data.metaProvider.{ LocalMetaBackendService, MetaBackendServiceComponent }
 import com.typesafe.scalalogging.{ LazyLogging, Logger }
 
@@ -26,7 +26,7 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
   private var bind: ServerBinding = _
   var dbService: DbService = _
 
-  override def metaBackendService: LocalMetaBackendService = new LocalMetaBackendService()(system.dispatcher)
+  override def metaBackendService: LocalMetaBackendService = new LocalMetaBackendService(dbService)(system.dispatcher)
 
   override def run()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
     implicit val mat: ActorMaterializer = ActorMaterializer()
