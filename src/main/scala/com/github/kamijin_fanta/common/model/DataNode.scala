@@ -1,3 +1,7 @@
 package com.github.kamijin_fanta.common.model
 
-case class DataNode(nodeGroup: String, nodeId: String, address: String)
+import akka.http.scaladsl.model.Uri
+
+case class DataNode(nodeGroup: String, nodeId: String, address: String) {
+  val apiBaseUri = Uri(s"http://$address")
+}

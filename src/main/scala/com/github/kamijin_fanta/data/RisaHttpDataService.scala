@@ -10,7 +10,7 @@ import akka.http.scaladsl.model.Uri.Path
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Route
 import akka.stream._
-import akka.stream.scaladsl.{ BroadcastHub, FileIO, Keep, Source }
+import akka.stream.scaladsl.{ Broadcast, BroadcastHub, FileIO, Keep, Source }
 import akka.util.ByteString
 import com.github.kamijin_fanta.ApplicationConfig
 import com.github.kamijin_fanta.common.model.DataNode
@@ -19,7 +19,7 @@ import com.github.kamijin_fanta.data.metaProvider.{ LocalMetaBackendService, Met
 import com.typesafe.scalalogging.{ LazyLogging, Logger }
 
 import scala.concurrent.duration._
-import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
+import scala.concurrent.{ Await, ExecutionContext, ExecutionContextExecutor, Future }
 
 case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, system: ActorSystem)
   extends LazyLogging with TerminableService with DbServiceComponent with MetaBackendServiceComponent {
@@ -70,12 +70,14 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
     }
 
     def otherNodesRequests(otherNodes: Seq[DataNode], tabletItem: TabletItem, source: Source[ByteString, Any]) = {
-      val requestEntity = HttpEntity(ContentTypes.NoContentType, source)
+      val requestEntity = HttpEntity(
+        ContentTypes.NoContentType,
+        source.buffer(2, OverflowStrategy.backpressure))
       val path = Path(s"/internal/object/${tabletItem.tablet}/${tabletItem.itemName}")
       val res = otherNodes
         .map(node => HttpRequest(
           HttpMethods.POST,
-          Uri(s"http://${node.address}").withPath(path),
+          node.apiBaseUri.withPath(path),
           entity = requestEntity))
         .map(req => Http().singleRequest(req))
       Future.sequence(res)
@@ -88,16 +90,18 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
           val iores = for {
             tabletItem <- tabletItemAllocator(length)
             otherNodes <- metaBackendService.otherNodes()
-            hub = entity.dataBytes.delay(1 micro).runWith(BroadcastHub.sink(16))
+            hub = entity.dataBytes.delay(1 nano).runWith(BroadcastHub.sink(2))
             to = FileIO.toPath(toFile(tabletItem.tablet, tabletItem.itemName).toPath)
-            res <- hub.runWith(to)
-            otherNodes <- otherNodesRequests(otherNodes, tabletItem, hub)
-          } yield (tabletItem, res, otherNodes)
+            otherNodeRes <- otherNodesRequests(otherNodes, tabletItem, hub)
+          } yield (tabletItem, hub.runWith(to), otherNodeRes)
 
           onSuccess(iores) { (tablet, res, otherNodes) =>
             // todo commit to database
             // todo http error handling
-            logger.info(s"complete ${tablet} ${res} ${otherNodes}")
+            val r = Await.result(
+              Future.sequence(otherNodes.map(_.entity.toStrict(2 seconds))),
+              2 seconds).map(_.data.utf8String)
+            logger.info(s"complete ${tablet} ${res} ${otherNodes} ${r}")
             val path = s"/${tablet.tablet}/${tablet.itemName}"
             complete(path)
           }
@@ -111,8 +115,8 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
 
       val result = source.runWith(localSink)
       onSuccess(result) { res =>
-        logger.info(s"upload complete $res")
-        if (res.wasSuccessful) complete("ok")
+        logger.info(s"internal upload complete $res")
+        if (res.wasSuccessful) complete(res.count.toString)
         else failWith(res.getError)
       }
     }
@@ -131,11 +135,38 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
 
     def deleteFile(tablet: String, name: String): Route = {
       // todo commit to database
-      val file = toFile(tablet, name)
-      logger.debug(s"delete ${file.toPath} ${file.isFile} ${file.canRead}")
+      // database commit -> delete local file -> delete remote file
 
-      if (file.delete()) complete("ok")
-      else complete(StatusCodes.NotFound, "content not found")
+      logger.debug(s"delete $tablet/$name")
+
+      def deleteLocalFile(): Future[Unit] = {
+        val file = toFile(tablet, name)
+        file.delete()
+        Future.successful()
+      }
+      def deleteRemoteFiles(): Future[Seq[HttpResponse]] = {
+        val requests = for {
+          nodes <- metaBackendService.otherNodes()
+          reqs = nodes.map { node =>
+            HttpRequest(
+              HttpMethods.DELETE,
+              node.apiBaseUri.withPath(Path(s"/internal/object/$tablet/$name")))
+          }
+        } yield {
+          Future.sequence(reqs.map(r => Http().singleRequest(r)))
+        }
+        requests.flatten
+      }
+
+      val remoteResponse = for {
+        _ <- deleteLocalFile()
+        res <- deleteRemoteFiles()
+      } yield res
+
+      onSuccess(remoteResponse) { res =>
+        if (res.forall(_.status.isSuccess())) complete("OK")
+        else complete(StatusCodes.ServiceUnavailable, "Service Unavailable")
+      }
     }
 
     def internalDeleteFile(tablet: String, name: String): Route = {

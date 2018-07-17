@@ -81,11 +81,15 @@ class RisaHttpDataServiceTest extends FunSpec with BeforeAndAfterAll with Scalat
     val getEntity = blockingToStrictString(getRes.entity)
     assert(dummyContent == getEntity)
 
+    val getOtherNodeRes = blockingRequest(HttpRequest(uri = base.withPort(port + 1).withPath(objectPath)))
+    val getOtherNodeEntity = blockingToStrictString(getOtherNodeRes.entity)
+    assert(dummyContent == getOtherNodeEntity)
+
     val delRes = blockingRequest(HttpRequest(uri = base.withPath(objectPath), method = HttpMethods.DELETE))
     assert(delRes.status.isSuccess())
 
-    val delRes2 = blockingRequest(HttpRequest(uri = base.withPath(objectPath), method = HttpMethods.DELETE))
-    assert(delRes2.status === StatusCodes.NotFound)
+    val getRes2 = blockingRequest(HttpRequest(uri = base.withPath(objectPath)))
+    assert(getRes2.status === StatusCodes.NotFound)
   }
 
   it("stream test") {
