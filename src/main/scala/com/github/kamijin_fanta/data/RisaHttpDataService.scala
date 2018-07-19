@@ -10,16 +10,14 @@ import akka.http.scaladsl.model.Uri.Path
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Route
 import akka.stream._
-import akka.stream.scaladsl.{ Broadcast, BroadcastHub, FileIO, Keep, Source }
-import akka.util.ByteString
+import akka.stream.scaladsl.FileIO
 import com.github.kamijin_fanta.ApplicationConfig
 import com.github.kamijin_fanta.common.model.DataNode
-import com.github.kamijin_fanta.common.{ DbService, DbServiceComponent, TerminableService }
-import com.github.kamijin_fanta.data.metaProvider.{ LocalMetaBackendService, MetaBackendServiceComponent }
-import com.typesafe.scalalogging.{ LazyLogging, Logger }
+import com.github.kamijin_fanta.common.{DbService, DbServiceComponent, TerminableService}
+import com.github.kamijin_fanta.data.metaProvider.{LocalMetaBackendService, MetaBackendServiceComponent}
+import com.typesafe.scalalogging.{LazyLogging, Logger}
 
-import scala.concurrent.duration._
-import scala.concurrent.{ Await, ExecutionContext, ExecutionContextExecutor, Future }
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 
 case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, system: ActorSystem)
   extends LazyLogging with TerminableService with DbServiceComponent with MetaBackendServiceComponent {
@@ -69,10 +67,10 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
       Future.successful(TabletItem("0001", randomName))
     }
 
-    def otherNodesRequests(otherNodes: Seq[DataNode], tabletItem: TabletItem, source: Source[ByteString, Any]) = {
+    def otherNodesRequests(otherNodes: Seq[DataNode], tabletItem: TabletItem, inputPath: java.nio.file.Path) = {
       val requestEntity = HttpEntity(
         ContentTypes.NoContentType,
-        source.buffer(2, OverflowStrategy.backpressure))
+        FileIO.fromPath(inputPath))
       val path = Path(s"/internal/object/${tabletItem.tablet}/${tabletItem.itemName}")
       val res = otherNodes
         .map(node => HttpRequest(
@@ -87,23 +85,24 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
       entity.contentLengthOption match {
         case Some(length) =>
           logger.debug(s"Put new object ContentLength:${length}")
+
+          // todo check checksum / timeout / delete incomplete files
           val iores = for {
             tabletItem <- tabletItemAllocator(length)
             otherNodes <- metaBackendService.otherNodes()
-            hub = entity.dataBytes.delay(1 nano).runWith(BroadcastHub.sink(2))
-            to = FileIO.toPath(toFile(tabletItem.tablet, tabletItem.itemName).toPath)
-            otherNodeRes <- otherNodesRequests(otherNodes, tabletItem, hub)
-          } yield (tabletItem, hub.runWith(to), otherNodeRes)
+            localPath = toFile(tabletItem.tablet, tabletItem.itemName).toPath
+            to = FileIO.toPath(localPath)
+            ioRes <- entity.dataBytes.runWith(to)
+            otherNodeRes <- otherNodesRequests(otherNodes, tabletItem, localPath)
+          } yield (tabletItem, ioRes, otherNodeRes)
 
-          onSuccess(iores) { (tablet, res, otherNodes) =>
+          onSuccess(iores) { (tablet, ioRes, otherNodes) =>
             // todo commit to database
             // todo http error handling
-            val r = Await.result(
-              Future.sequence(otherNodes.map(_.entity.toStrict(2 seconds))),
-              2 seconds).map(_.data.utf8String)
-            logger.info(s"complete ${tablet} ${res} ${otherNodes} ${r}")
+            logger.info(s"complete ${tablet} ${ioRes} ${otherNodes}")
             val path = s"/${tablet.tablet}/${tablet.itemName}"
-            complete(path)
+            if (otherNodes.forall(_.status.isSuccess())) complete(path)
+            else complete(StatusCodes.InternalServerError, "internal server error")
           }
         case None => failWith(new AssertionError("need header content-length"))
       }

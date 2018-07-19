@@ -2,16 +2,16 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.Uri.Path
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.testkit.ScalatestRouteTest
-import akka.stream.Materializer
-import akka.stream.scaladsl.{ BroadcastHub, Keep, Sink, Source }
+import akka.stream._
+import akka.stream.scaladsl.{BroadcastHub, Sink, Source}
 import com.github.kamijin_fanta.ApplicationConfig
 import com.github.kamijin_fanta.common.model.DataNode
 import com.github.kamijin_fanta.data.RisaHttpDataService
 import com.github.kamijin_fanta.data.metaProvider.LocalMetaBackendService
-import org.scalatest.{ BeforeAndAfterAll, FunSpec }
+import org.scalatest.{BeforeAndAfterAll, FunSpec}
 
 import scala.concurrent.duration._
-import scala.concurrent.{ Await, ExecutionContext, ExecutionContextExecutor, Future }
+import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutor, Future}
 
 class RisaHttpDataServiceTest extends FunSpec with BeforeAndAfterAll with ScalatestRouteTest {
   implicit val ctx: ExecutionContextExecutor = system.dispatcher
@@ -79,17 +79,17 @@ class RisaHttpDataServiceTest extends FunSpec with BeforeAndAfterAll with Scalat
 
     val getRes = blockingRequest(HttpRequest(uri = base.withPath(objectPath)))
     val getEntity = blockingToStrictString(getRes.entity)
-    assert(dummyContent == getEntity)
+    assert(dummyContent == getEntity, "invalid file")
 
     val getOtherNodeRes = blockingRequest(HttpRequest(uri = base.withPort(port + 1).withPath(objectPath)))
     val getOtherNodeEntity = blockingToStrictString(getOtherNodeRes.entity)
-    assert(dummyContent == getOtherNodeEntity)
+    assert(dummyContent == getOtherNodeEntity, "other nodes invalid file")
 
     val delRes = blockingRequest(HttpRequest(uri = base.withPath(objectPath), method = HttpMethods.DELETE))
-    assert(delRes.status.isSuccess())
+    assert(delRes.status.isSuccess(), "errors occurred in deletion")
 
     val getRes2 = blockingRequest(HttpRequest(uri = base.withPath(objectPath)))
-    assert(getRes2.status === StatusCodes.NotFound)
+    assert(getRes2.status === StatusCodes.NotFound, "actually deletion not work")
   }
 
   it("stream test") {
