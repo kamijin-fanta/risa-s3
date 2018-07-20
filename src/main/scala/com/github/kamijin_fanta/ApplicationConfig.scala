@@ -10,8 +10,8 @@ case class ApplicationConfig(
 
 case class DataNodeConfig(
   port: Int,
-  group: String,
-  node: String,
+  group: Int,
+  node: Int,
   baseDir: String)
 
 object ApplicationConfig {
@@ -23,8 +23,8 @@ object ApplicationConfig {
 
     val dataConfig = DataNodeConfig(
       port = data.getInt("port"),
-      group = data.getString("group"),
-      node = data.getString("node"),
+      group = data.getInt("group"),
+      node = data.getInt("node"),
       baseDir = data.getString("base-dire"))
 
     ApplicationConfig(

@@ -6,7 +6,6 @@ trait DbServiceComponent {
   def dbService: DbService
 
 }
-
 case class DbService(backend: jdbc.MySQLProfile.backend.Database) {
 
   def terminate(): Unit = {

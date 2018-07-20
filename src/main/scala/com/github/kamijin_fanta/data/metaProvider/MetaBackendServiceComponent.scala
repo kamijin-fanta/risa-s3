@@ -1,34 +1,53 @@
 package com.github.kamijin_fanta.data.metaProvider
 
+import Tables._
 import com.github.kamijin_fanta.ApplicationConfig
-import com.github.kamijin_fanta.common.DbService
-import com.github.kamijin_fanta.common.model.DataNode
-import slick.jdbc.MySQLProfile.api._
+import com.github.kamijin_fanta.common.model.Tablet
+import com.github.kamijin_fanta.common.{ DbService, DbServiceComponent }
 
 import scala.concurrent.{ ExecutionContext, Future }
 
-trait MetaBackendServiceComponent {
-  def metaBackendService: LocalMetaBackendService
-}
+trait MetaBackendServiceComponent extends DbServiceComponent {
+  def metaBackendService: MetaBackendService
 
-class LocalMetaBackendService(dbService: DbService)(implicit ctx: ExecutionContext) {
-  // todo refactor NodeGroup is Int
+  class MetaBackendService(dbService: DbService)(implicit ctx: ExecutionContext) {
 
-  def nodes(nodeGroup: String): Future[Seq[DataNode]] = {
-    Future.successful(Seq(
-      DataNode("DC-A-0001", "1", "localhost:9551"),
-      DataNode("DC-A-0001", "2", "localhost:9552")))
-  }
+    import slick.jdbc.MySQLProfile.api._
 
-  def otherNodes(nodeGroup: String, selfNodeId: String): Future[Seq[DataNode]] = {
-    nodes(nodeGroup).map(_.filterNot(_.nodeId == selfNodeId))
-  }
-  def otherNodes()(implicit applicationConfig: ApplicationConfig): Future[Seq[DataNode]] = {
-    otherNodes(applicationConfig.data.group, applicationConfig.data.node)
-  }
+    def nodes(nodeGroup: Int): Future[Seq[VolumeNodeRow]] = {
+      dbService.backend.run(
+        VolumeNode.filter(_.volumeGroup === nodeGroup).result)
+    }
 
-  def addItem(volumeGroup: Int, tablet: String, name: String, hash: String): Future[Int] = {
-    val newData = Tables.VolumeFileRow(volumeGroup, tablet, name, hash)
-    dbService.backend.run(Tables.VolumeFile += newData)
+    def otherNodes(nodeGroup: Int, selfNodeId: Int): Future[Seq[VolumeNodeRow]] = {
+      nodes(nodeGroup).map(_.filterNot(_.id == selfNodeId))
+    }
+
+    def otherNodes()(implicit applicationConfig: ApplicationConfig): Future[Seq[VolumeNodeRow]] = {
+      otherNodes(applicationConfig.data.group, applicationConfig.data.node)
+    }
+
+    def selfNode()(implicit applicationConfig: ApplicationConfig): Future[Option[VolumeNodeRow]] = {
+      dbService.backend.run(
+        VolumeNode.filter(_.id === applicationConfig.data.node).result.headOption)
+    }
+
+    def addItem(volumeGroup: Int, tablet: String, name: String, hash: String): Future[Int] = {
+      val newData = VolumeFileRow(volumeGroup, tablet, name, hash)
+      dbService.backend.run(VolumeFile += newData)
+    }
+
+    def tabletItems(volumeGroup: Int, tablet: String) = {
+      dbService.backend.run(
+        VolumeFile
+          .filter(r => r.volumeGroup === volumeGroup && r.tablet === tablet)
+          .result)
+    }
+    def hasTablets(volumeGroup: Int): Future[Seq[Tablet]] = {
+      dbService.backend.run(
+        VolumeFile
+          .distinctOn(c => (c.volumeGroup, c.tablet))
+          .result).map(_.map(t => Tablet(t.volumeGroup, t.tablet)))
+    }
   }
 }

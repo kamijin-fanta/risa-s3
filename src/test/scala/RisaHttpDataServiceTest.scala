@@ -7,8 +7,8 @@ import akka.stream.scaladsl.{BroadcastHub, Sink, Source}
 import com.github.kamijin_fanta.ApplicationConfig
 import com.github.kamijin_fanta.common.model.DataNode
 import com.github.kamijin_fanta.data.RisaHttpDataService
-import com.github.kamijin_fanta.data.metaProvider.LocalMetaBackendService
 import org.scalatest.{BeforeAndAfterAll, FunSpec}
+import Tables._
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutor, Future}
@@ -26,23 +26,21 @@ class RisaHttpDataServiceTest extends FunSpec with BeforeAndAfterAll with Scalat
   override def beforeAll(): Unit = {
     super.beforeAll()
     val nodeList = Seq(
-      DataNode("DC-A-0001", "1", s"localhost:${port}"),
-      DataNode("DC-A-0001", "2", s"localhost:${port + 1}"))
+      VolumeNodeRow(1, 1000, s"http://localhost:${port}", 1000000000L, 1000000000L),
+      VolumeNodeRow(1, 1000, s"http://localhost:${port + 1}", 1000000000L, 1000000000L))
     httpService = new RisaHttpDataService() {
-      override def metaBackendService: LocalMetaBackendService =
-        new LocalMetaBackendService(dbService) {
-          override def nodes(nodeGroup: String): Future[Seq[DataNode]] = {
+      override def metaBackendService: MetaBackendService =
+        new MetaBackendService(dbService) {
+          override def nodes(nodeGroup: Int): Future[Seq[VolumeNodeRow]] =
             Future.successful(nodeList)
-          }
         }
     }
     val config2 = config.copy(data = config.data.copy(port = port + 1, baseDir = "./data2"))
     httpService2 = new RisaHttpDataService()(config2, system) {
-      override def metaBackendService: LocalMetaBackendService =
-        new LocalMetaBackendService(dbService) {
-          override def nodes(nodeGroup: String): Future[Seq[DataNode]] = {
+      override def metaBackendService: MetaBackendService =
+        new MetaBackendService(dbService) {
+          override def nodes(nodeGroup: Int): Future[Seq[VolumeNodeRow]] =
             Future.successful(nodeList)
-          }
         }
     }
     httpService.run()

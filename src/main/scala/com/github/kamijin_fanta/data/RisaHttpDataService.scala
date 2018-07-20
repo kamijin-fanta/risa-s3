@@ -3,6 +3,7 @@ package com.github.kamijin_fanta.data
 import java.io.File
 import java.util.UUID
 
+import Tables._
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.Http.ServerBinding
@@ -12,26 +13,26 @@ import akka.http.scaladsl.server.Route
 import akka.stream._
 import akka.stream.scaladsl.FileIO
 import com.github.kamijin_fanta.ApplicationConfig
-import com.github.kamijin_fanta.common.model.DataNode
-import com.github.kamijin_fanta.common.{DbService, DbServiceComponent, TerminableService}
-import com.github.kamijin_fanta.data.metaProvider.{LocalMetaBackendService, MetaBackendServiceComponent}
-import com.typesafe.scalalogging.{LazyLogging, Logger}
+import com.github.kamijin_fanta.common.model.Implement._
+import com.github.kamijin_fanta.common.{ DbService, DbServiceComponent, TerminableService }
+import com.github.kamijin_fanta.data.metaProvider.MetaBackendServiceComponent
+import com.typesafe.scalalogging.{ LazyLogging, Logger }
 
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
+import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
 
 case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, system: ActorSystem)
   extends LazyLogging with TerminableService with DbServiceComponent with MetaBackendServiceComponent {
   private var bind: ServerBinding = _
   var dbService: DbService = _
 
-  override def metaBackendService: LocalMetaBackendService = new LocalMetaBackendService(dbService)(system.dispatcher)
+  override def metaBackendService: MetaBackendService = new MetaBackendService(dbService)(system.dispatcher)
 
   override def run()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
     implicit val mat: ActorMaterializer = ActorMaterializer()
     implicit val ctx: ExecutionContext = system.dispatcher
 
     val db = slick.jdbc.MySQLProfile.api.Database.forConfig("database")
-    dbService = new DbService(db)
+    dbService = DbService(db)
 
     Http()
       .bindAndHandle(rootRoute(logger), "0.0.0.0", applicationConfig.data.port)
@@ -67,7 +68,7 @@ case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, sy
       Future.successful(TabletItem("0001", randomName))
     }
 
-    def otherNodesRequests(otherNodes: Seq[DataNode], tabletItem: TabletItem, inputPath: java.nio.file.Path) = {
+    def otherNodesRequests(otherNodes: Seq[VolumeNodeRow], tabletItem: TabletItem, inputPath: java.nio.file.Path) = {
       val requestEntity = HttpEntity(
         ContentTypes.NoContentType,
         FileIO.fromPath(inputPath))

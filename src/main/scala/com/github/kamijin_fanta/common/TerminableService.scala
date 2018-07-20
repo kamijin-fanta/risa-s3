@@ -1,6 +1,6 @@
 package com.github.kamijin_fanta.common
 
-import scala.concurrent.{ ExecutionContextExecutor, Future }
+import scala.concurrent.{ExecutionContextExecutor, Future}
 
 trait TerminableService {
 
