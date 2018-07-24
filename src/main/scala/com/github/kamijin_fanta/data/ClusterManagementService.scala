@@ -20,9 +20,9 @@ object ClusterInfo {
     volumeGroupRow: VolumeGroupRow,
     ) extends Data
 
-  sealed trait Event
-  case class ReceiveClusterInfo(volumeGroupRow: VolumeGroupRow)
-  case object Fetch
+  sealed trait Events
+  case class ReceiveClusterInfo(volumeGroupRow: VolumeGroupRow) extends Events
+  case object Fetch extends Events
 }
 
 object ClusterCompaction {
@@ -31,7 +31,6 @@ object ClusterCompaction {
   case object SearchNextTablet extends State
   case object QuickTabletFilter extends State
   case object FullTabletFilter extends State
-  case object HashChecking extends State
   case object DownloadTabletItems extends State
   case object Complete extends State
 
@@ -46,8 +45,14 @@ object ClusterCompaction {
                                    reamingFiles: Seq[String]
                                  ) extends Data
 
-  sealed trait Event
-  case object Start
+  sealed trait Events
+  case object Start extends Events
+  case class FetchNextTablet(current: Option[String])
+  case class ReceiveTablet(tablet: Option[String], reamingFiles: Seq[String]) extends Events
+  case class FilterFiles(repairType: RepairType, tablet: String, files: Seq[String])
+  case class ReceiveFilterFiles(tablet: String, files: Seq[String])
+  case class FetchTabletItems(tablet: String, files: Seq[String])
+  case object ReceiveFetchTabletItems
 }
 
 trait ClusterManagementService {
@@ -84,6 +89,72 @@ trait ClusterManagementService {
     import ClusterCompaction._
 
     startWith(Idle, CompactionInfo(FullRepair, None, Seq()))
+
+    when(Idle) {
+      case Event(Start, info: CompactionInfo) =>
+        goto(SearchNextTablet)
+    }
+
+    when(SearchNextTablet) {
+      case Event(e: ReceiveTablet, info: CompactionInfo) =>
+        val nextData = info.copy(
+          currentTablet = e.tablet,
+          reamingFiles = e.reamingFiles
+        )
+        (e.tablet, info.repairType) match {
+          case (None, _) => goto(Complete) using nextData
+          case (_, QuickRepair) => goto(QuickTabletFilter) using nextData
+          case (_, FullRepair) => goto(FullTabletFilter) using nextData
+        }
+    }
+
+    onTransition {
+      case _ -> SearchNextTablet =>
+        stateData match {
+          case info :CompactionInfo =>
+            client ! FetchNextTablet(info.currentTablet)
+          case _ =>
+        }
+    }
+
+    when(QuickTabletFilter) {
+      case Event(e: ReceiveFilterFiles, info: CompactionInfo) =>
+        goto(FullTabletFilter) using info.copy(reamingFiles = e.files)
+    }
+    onTransition {
+      case _ -> QuickTabletFilter =>
+        stateData match {
+          case CompactionInfo(_, Some(tablet), files) =>
+            client ! FilterFiles(QuickRepair, tablet, files)
+          case _ =>
+        }
+    }
+
+    when(FullTabletFilter) {
+      case Event(e: ReceiveFilterFiles, info: CompactionInfo) =>
+        goto(DownloadTabletItems) using info.copy(reamingFiles = e.files)
+    }
+    onTransition {
+      case _ -> FullTabletFilter =>
+        stateData match {
+          case CompactionInfo(_, Some(tablet), files) =>
+            client ! FilterFiles(FullRepair, tablet, files)
+          case _ =>
+        }
+    }
+
+    when(DownloadTabletItems) {
+      case Event(ReceiveFetchTabletItems, info: CompactionInfo) =>
+        goto(SearchNextTablet)
+    }
+    onTransition {
+      case _ -> DownloadTabletItems =>
+        stateData match {
+          case CompactionInfo(_, Some(tablet), files) =>
+            client ! FetchTabletItems(tablet, files)
+          case _ =>
+        }
+    }
   }
 }
 
