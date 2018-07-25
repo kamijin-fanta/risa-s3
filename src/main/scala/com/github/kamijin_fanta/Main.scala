@@ -5,18 +5,20 @@ import com.github.kamijin_fanta.common.TerminableService
 import com.github.kamijin_fanta.data.RisaHttpDataService
 import com.github.kamijin_fanta.proxy.RisaHttpProxyService
 
-import scala.concurrent.ExecutionContextExecutor
-import scala.util.{Failure, Success}
+import scala.concurrent.{ Await, ExecutionContextExecutor }
+import scala.concurrent.duration._
+import scala.util.{ Failure, Success }
 
 object Main {
   var stop = false
   implicit val system: ActorSystem = ActorSystem()
   implicit val ctx: ExecutionContextExecutor = system.dispatcher
+  var httpService: TerminableService = _
 
   def main(args: Array[String]): Unit = {
     try {
       implicit val config: ApplicationConfig = ApplicationConfig.load()
-      val httpService: TerminableService = config.role match {
+      httpService = config.role match {
         case "proxy" => RisaHttpProxyService(system)
         case "data" => RisaHttpDataService(system, config)
         case x => throw new IllegalArgumentException(s"known role $x")
@@ -29,11 +31,13 @@ object Main {
           shutdown()
       }
 
+      if (System.in != null) System.in.read()
       println("Press RETURN to stop...")
       while (!stop && System.in != null) {
         if (System.in.available() != 0) {
           System.in.read() match {
             case 13 | 10 =>
+              println("trigger termination")
               shutdown()
             case _ =>
           }
@@ -49,6 +53,7 @@ object Main {
 
   def shutdown(): Unit = {
     stop = true
-    system.terminate()
+    Await.result(httpService.terminate(), 10 seconds)
+    Await.result(system.terminate(), 10 seconds)
   }
 }

@@ -19,6 +19,7 @@ import com.github.kamijin_fanta.data.metaProvider.MetaBackendServiceComponent
 import com.typesafe.scalalogging.{ LazyLogging, Logger }
 
 import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
+import scala.concurrent.duration._
 
 case class RisaHttpDataService(_system: ActorSystem, _applicationConfig: ApplicationConfig)
   extends LazyLogging
@@ -26,9 +27,15 @@ case class RisaHttpDataService(_system: ActorSystem, _applicationConfig: Applica
   with DbServiceComponent
   with MetaBackendServiceComponent
   with ActorSystemServiceComponent
-  with ApplicationConfigComponent {
+  with ApplicationConfigComponent
+  with ClusterManagementServiceComponent
+  with DoctorServiceComponent {
+
   private var bind: ServerBinding = _
   var dbService: DbService = _
+
+  override def doctorService: DoctorService = new DoctorService
+  override def clusterManagementService: ClusterManagementService = new ClusterManagementService
 
   override implicit val actorSystem: ActorSystem = _system
   override implicit val applicationConfig: ApplicationConfig = _applicationConfig
@@ -41,23 +48,28 @@ case class RisaHttpDataService(_system: ActorSystem, _applicationConfig: Applica
 
     val db = slick.jdbc.MySQLProfile.api.Database.forConfig("database")
     dbService = DbService(db)
+    clusterManagementService.init()
 
     Http()
       .bindAndHandle(rootRoute(logger), "0.0.0.0", applicationConfig.data.port)
       .map { b =>
         logger.info("listen: " + b.localAddress.toString)
-        this.synchronized(bind = b)
+        this.synchronized {
+          bind = b
+        }
         ()
       }
   }
 
   override def terminate()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
     if (bind != null) {
-      bind.unbind().map { _ =>
-        synchronized {
-          bind = null
+      logger.info("Graceful termination...")
+      bind.terminate(hardDeadline = 10 second)
+        .map { _ =>
+          this.synchronized {
+            bind = null
+          }
         }
-      }
     } else {
       Future.successful()
     } map { _ =>

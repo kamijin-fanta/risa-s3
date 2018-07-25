@@ -3,7 +3,7 @@ package com.github.kamijin_fanta.data
 import Tables._
 import akka.actor.{ FSM, Props }
 import com.github.kamijin_fanta.common.{ ActorSystemServiceComponent, ApplicationConfigComponent, DbServiceComponent }
-import com.github.kamijin_fanta.data.ClusterManagement.ReceiveClusterInfo
+import com.github.kamijin_fanta.data.ClusterManagement._
 
 import scala.concurrent.duration._
 import scala.concurrent.{ ExecutionContextExecutor, Future }
@@ -27,19 +27,23 @@ object ClusterManagement {
   case object Fetch extends Events
   case class Rejection(throwable: Throwable) extends Events
   case object BootstrapComplete extends Events
+  case object RequestCurrentClusterSettings extends Events
+  case class CurrentClusterSettings(clusterSettings: Data) extends Events
 }
 
-trait ClusterManagementServiceComponent
-  extends ActorSystemServiceComponent
-  with ApplicationConfigComponent
-  with DbServiceComponent
-  with DoctorServiceComponent {
+trait ClusterManagementServiceComponent {
+  self: ActorSystemServiceComponent with ApplicationConfigComponent with DbServiceComponent with DoctorServiceComponent =>
 
-  def ClusterManagementService = new ClusterManagementService
+  def clusterManagementService: ClusterManagementService
 
   class ClusterManagementService {
     import slick.jdbc.MySQLProfile.api._
-    val stateMachine = actorSystem.actorOf(Props(new ClusterManagementStateMachine(this)))
+    var currentClusterData: Data = Uninitialized
+
+    def init() = {
+      val stateMachine = actorSystem.actorOf(Props(new ClusterManagementStateMachine(this)))
+      doctorService.init()
+    }
 
     def fetchClusterInfo()(implicit ctx: ExecutionContextExecutor): Future[ReceiveClusterInfo] = {
       val volumeGroup = applicationConfig.data.group
@@ -55,6 +59,17 @@ trait ClusterManagementServiceComponent
     def waitRepair()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
       doctorService.waitComplete()
     }
+
+    def currentClusterSetting(): Option[ClusterSettings] = {
+      currentClusterData match {
+        case c: ClusterSettings => Some(c)
+        case _ => None
+      }
+    }
+
+    def _updateClusterInfo(_currentClusterSettings: CurrentClusterSettings): Unit = {
+      currentClusterData = _currentClusterSettings.clusterSettings
+    }
   }
 
   class ClusterManagementStateMachine(client: ClusterManagementService) extends FSM[ClusterManagement.State, ClusterManagement.Data] {
@@ -64,21 +79,25 @@ trait ClusterManagementServiceComponent
 
     startWith(Idle, Uninitialized)
 
+    log.debug("#########")
+
     when(Idle, 1 seconds) {
       case Event(StateTimeout, _) =>
         goto(Initialize)
     }
 
-    when(Initialize, 10 seconds) {
+    when(Initialize, 30 seconds) {
       case Event(StateTimeout, _) =>
         goto(Idle)
       case Event(e: ReceiveClusterInfo, _) =>
+        log.debug(s"receive cluster info $e")
         goto(Bootstrap) using ClusterSettings(e.volumeGroupRow)
       case Event(e: Rejection, _) =>
         goto(Idle)
     }
     onTransition {
       case _ -> Initialize =>
+        log.debug("start initialize")
         client.fetchClusterInfo().onComplete {
           case Success(info) => self ! info
           case Failure(th) =>
@@ -107,6 +126,7 @@ trait ClusterManagementServiceComponent
     onTransition {
       case before -> after =>
         log.debug(s"change state $before -> $after")
+        client._updateClusterInfo(CurrentClusterSettings(stateData))
     }
 
     initialize()

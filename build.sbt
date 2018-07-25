@@ -16,11 +16,11 @@ libraryDependencies ++= Seq(
   "mysql" % "mysql-connector-java" % "8.0.11",
 
   // utils
-  //  "org.slf4j" % "slf4j-simple" % "1.7.24",
   "org.json4s" %% "json4s-native" % "3.5.2",
   "com.github.nscala-time" %% "nscala-time" % "2.16.0",
   "com.typesafe" % "config" % "1.3.1",
   "com.typesafe.scala-logging" %% "scala-logging" % "3.7.2",
+  "com.typesafe.akka" %% "akka-slf4j" % "2.5.14",
   "ch.qos.logback" % "logback-classic" % "1.2.3",
   "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
 
@@ -30,8 +30,8 @@ libraryDependencies ++= Seq(
   "org.scalamock" %% "scalamock-scalatest-support" % "3.6.0" % Test,
 
   // akka streams
-  "com.typesafe.akka" %% "akka-stream" % "2.5.13",
-  "com.typesafe.akka" %% "akka-stream-testkit" % "2.5.13" % Test,
+  "com.typesafe.akka" %% "akka-stream" % "2.5.14",
+  "com.typesafe.akka" %% "akka-stream-testkit" % "2.5.14" % Test,
 
   // akka http
   "com.typesafe.akka" %% "akka-http" % "10.1.3",

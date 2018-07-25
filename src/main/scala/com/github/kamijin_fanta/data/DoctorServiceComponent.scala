@@ -1,13 +1,15 @@
 package com.github.kamijin_fanta.data
 
-import akka.actor.{ FSM, Props }
+import akka.actor.{ ActorRef, Cancellable, FSM, Props }
 import akka.util.Timeout
-import com.github.kamijin_fanta.common.ActorSystemServiceComponent
+import com.github.kamijin_fanta.common.{ ActorSystemServiceComponent, DbServiceComponent }
 import com.typesafe.scalalogging.LazyLogging
 
 import scala.concurrent.duration._
 import scala.concurrent.{ ExecutionContextExecutor, Future, Promise }
 import scala.util.{ Failure, Success }
+
+import Tables.{ VolumeFile, VolumeFileRow }
 
 object DoctorStateMachineConst {
   sealed trait State
@@ -26,52 +28,84 @@ object DoctorStateMachineConst {
   final case class DoctorInfo(
     repairType: RepairType,
     currentTablet: Option[String],
-    reamingFiles: Seq[String]) extends Data
+    reamingFiles: Seq[VolumeFileRow]) extends Data
 
   sealed trait Events
   case object Start extends Events
   case class FetchNextTablet(current: Option[String]) extends Events
-  case class ReceiveTablet(tablet: Option[String], reamingFiles: Seq[String]) extends Events
-  case class FilterFiles(repairType: RepairType, tablet: String, files: Seq[String]) extends Events
-  case class ReceiveFilterFiles(tablet: String, files: Seq[String]) extends Events
-  case class DownloadTabletItems(tablet: String, files: Seq[String]) extends Events
+  case class ReceiveTablet(tablet: Option[String], reamingFiles: Seq[VolumeFileRow]) extends Events
+  case class FilterFiles(repairType: RepairType, tablet: String, files: Seq[VolumeFileRow]) extends Events
+  case class ReceiveFilterFiles(tablet: String, files: Seq[VolumeFileRow]) extends Events
+  case class DownloadTabletItems(tablet: String, files: Seq[VolumeFileRow]) extends Events
   case class Rejection(throwable: Throwable) extends Events
   case object DownloadTabletItemsComplete extends Events
   case object AskCurrentStats extends Events
   case class CurrentStats(state: State, data: DoctorInfo) extends Events
 }
 
-trait DoctorServiceComponent extends ActorSystemServiceComponent {
+trait DoctorServiceComponent {
+  self: ActorSystemServiceComponent with DbServiceComponent with ClusterManagementServiceComponent =>
   import DoctorStateMachineConst._
 
-  def doctorService = new DoctorService
+  def doctorService: DoctorService
 
   class DoctorService extends LazyLogging {
-    val doctorStateMachine = actorSystem.actorOf(Props(new DoctorStateMachine(this)))
+    import slick.jdbc.MySQLProfile.api._
 
-    def fetchNextTablet(currentTablet: Option[String]): Future[ReceiveTablet] = {
+    var doctorStateMachine: ActorRef = _
+
+    init()
+    def init() = {
+      if (doctorStateMachine == null) {
+        doctorStateMachine = actorSystem.actorOf(Props(new DoctorStateMachine(this)))
+      }
+    }
+
+    def fetchNextTablet(currentTablet: Option[String])(implicit ctx: ExecutionContextExecutor): Future[ReceiveTablet] = {
+      val info = clusterManagementService.currentClusterSetting()
+        .getOrElse(throw new Exception("not cluster initialized"))
+      val volume = dbService.backend.run(
+        VolumeFile
+          .filter(t => t.volumeGroup === info.volumeGroupRow.id && t.tablet > currentTablet.getOrElse(""))
+          .take(1)
+          .result
+          .headOption)
+      volume.flatMap {
+        case Some(v) =>
+          for {
+            files <- dbService.backend.run(
+              VolumeFile
+                .filter(t => t.volumeGroup === v.volumeGroup && t.tablet === v.tablet)
+                .result)
+          } yield ReceiveTablet(files.headOption.map(_.tablet), files)
+        case None =>
+          Future.successful(ReceiveTablet(None, Seq()))
+      }
+    }
+    def filterFiles(repairType: RepairType, tablet: String, files: Seq[VolumeFileRow]): Future[ReceiveFilterFiles] = {
       ???
     }
-    def filterFiles(repairType: RepairType, tablet: String, files: Seq[String]): Future[ReceiveFilterFiles] = {
-      ???
-    }
-    def downloadTabletItems(tablet: String, files: Seq[String]): Future[Unit] = {
+    def downloadTabletItems(tablet: String, files: Seq[VolumeFileRow]): Future[Unit] = {
       ???
     }
     def startRepair(): Unit = {
+      logger.debug(s"doctorStateMachine: $doctorStateMachine ")
       doctorStateMachine ! Start
     }
     def waitComplete()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
       val promise = Promise[Unit]
-      val c = actorSystem.scheduler.schedule(0 second, 1 second) {
+      var switch: Cancellable = null
+      switch = actorSystem.scheduler.schedule(0 second, 1 second) {
         import akka.pattern.ask
         implicit val timeout = Timeout(500 millis)
         (doctorStateMachine ? AskCurrentStats).mapTo[CurrentStats].onComplete {
           case Success(v) =>
-            if (v.state == Complete) promise.success()
+            switch.cancel()
+            if (v.state == Complete && promise.isCompleted) promise.success()
           case Failure(th) =>
             logger.error("error fetch current stats", th)
-            promise.failure(th)
+            switch.cancel()
+            if (promise.isCompleted) promise.failure(th)
         }
       }
 
