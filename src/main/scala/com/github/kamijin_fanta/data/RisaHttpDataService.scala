@@ -14,22 +14,24 @@ import akka.stream._
 import akka.stream.scaladsl.FileIO
 import com.github.kamijin_fanta.ApplicationConfig
 import com.github.kamijin_fanta.common.model.Implement._
-import com.github.kamijin_fanta.common.{ DbService, DbServiceComponent, TerminableService }
+import com.github.kamijin_fanta.common.{ ActorSystemServiceComponent, DbService, DbServiceComponent, TerminableService }
 import com.github.kamijin_fanta.data.metaProvider.MetaBackendServiceComponent
 import com.typesafe.scalalogging.{ LazyLogging, Logger }
 
 import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
 
-case class RisaHttpDataService(implicit applicationConfig: ApplicationConfig, system: ActorSystem)
-  extends LazyLogging with TerminableService with DbServiceComponent with MetaBackendServiceComponent {
+case class RisaHttpDataService(_system: ActorSystem)(implicit applicationConfig: ApplicationConfig)
+  extends LazyLogging with TerminableService with DbServiceComponent with MetaBackendServiceComponent with ActorSystemServiceComponent {
   private var bind: ServerBinding = _
   var dbService: DbService = _
 
-  override def metaBackendService: MetaBackendService = new MetaBackendService(dbService)(system.dispatcher)
+  override implicit val actorSystem: ActorSystem = _system
+
+  override def metaBackendService: MetaBackendService = new MetaBackendService(dbService)(actorSystem.dispatcher)
 
   override def run()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
     implicit val mat: ActorMaterializer = ActorMaterializer()
-    implicit val ctx: ExecutionContext = system.dispatcher
+    implicit val ctx: ExecutionContext = actorSystem.dispatcher
 
     val db = slick.jdbc.MySQLProfile.api.Database.forConfig("database")
     dbService = DbService(db)

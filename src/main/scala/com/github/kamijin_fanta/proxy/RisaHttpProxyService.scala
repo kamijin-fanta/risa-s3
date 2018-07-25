@@ -16,20 +16,22 @@ import akka.stream.{ ActorMaterializer, Materializer }
 import akka.util.ByteString
 import com.github.kamijin_fanta.ApplicationConfig
 import com.github.kamijin_fanta.aws4.{ AccessCredential, AccountProvider, AwsSig4StreamStage }
-import com.github.kamijin_fanta.common.TerminableService
+import com.github.kamijin_fanta.common.{ ActorSystemServiceComponent, TerminableService }
 import com.github.kamijin_fanta.response._
 import com.typesafe.scalalogging.{ LazyLogging, Logger }
 
 import scala.compat.java8.StreamConverters._
 import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
 
-case class RisaHttpProxyService(implicit applicationConfig: ApplicationConfig, system: ActorSystem)
-  extends LazyLogging with JsonMarshallSupport with XmlMarshallSupport with TerminableService {
+case class RisaHttpProxyService(_system: ActorSystem)(implicit applicationConfig: ApplicationConfig)
+  extends LazyLogging with JsonMarshallSupport with XmlMarshallSupport with TerminableService with ActorSystemServiceComponent {
   private var bind: ServerBinding = _
+
+  override implicit val actorSystem: ActorSystem = _system
 
   override def run()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
     implicit val mat: ActorMaterializer = ActorMaterializer()
-    implicit val ctx: ExecutionContext = system.dispatcher
+    implicit val ctx: ExecutionContext = actorSystem.dispatcher
 
     Http()
       .bindAndHandle(wrappedRootRoute, "0.0.0.0", applicationConfig.proxyPort)

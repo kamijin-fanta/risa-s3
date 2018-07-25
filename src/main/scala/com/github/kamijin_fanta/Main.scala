@@ -17,8 +17,8 @@ object Main {
     try {
       implicit val config: ApplicationConfig = ApplicationConfig.load()
       val httpService: TerminableService = config.role match {
-        case "proxy" => RisaHttpProxyService()
-        case "data" => RisaHttpDataService()
+        case "proxy" => RisaHttpProxyService(system)
+        case "data" => RisaHttpDataService(system)
         case x => throw new IllegalArgumentException(s"known role $x")
       }
 
