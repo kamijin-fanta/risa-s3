@@ -1,9 +1,12 @@
 package com.github.kamijin_fanta.data
 
 import akka.actor.{ FSM, Props }
+import akka.util.Timeout
 import com.github.kamijin_fanta.common.ActorSystemServiceComponent
+import com.typesafe.scalalogging.LazyLogging
 
-import scala.concurrent.Future
+import scala.concurrent.duration._
+import scala.concurrent.{ ExecutionContextExecutor, Future, Promise }
 import scala.util.{ Failure, Success }
 
 object DoctorStateMachineConst {
@@ -34,6 +37,8 @@ object DoctorStateMachineConst {
   case class DownloadTabletItems(tablet: String, files: Seq[String]) extends Events
   case class Rejection(throwable: Throwable) extends Events
   case object DownloadTabletItemsComplete extends Events
+  case object AskCurrentStats extends Events
+  case class CurrentStats(state: State, data: DoctorInfo) extends Events
 }
 
 trait DoctorServiceComponent extends ActorSystemServiceComponent {
@@ -41,7 +46,7 @@ trait DoctorServiceComponent extends ActorSystemServiceComponent {
 
   def doctorService = new DoctorService
 
-  class DoctorService {
+  class DoctorService extends LazyLogging {
     val doctorStateMachine = actorSystem.actorOf(Props(new DoctorStateMachine(this)))
 
     def fetchNextTablet(currentTablet: Option[String]): Future[ReceiveTablet] = {
@@ -52,6 +57,25 @@ trait DoctorServiceComponent extends ActorSystemServiceComponent {
     }
     def downloadTabletItems(tablet: String, files: Seq[String]): Future[Unit] = {
       ???
+    }
+    def startRepair(): Unit = {
+      doctorStateMachine ! Start
+    }
+    def waitComplete()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
+      val promise = Promise[Unit]
+      val c = actorSystem.scheduler.schedule(0 second, 1 second) {
+        import akka.pattern.ask
+        implicit val timeout = Timeout(500 millis)
+        (doctorStateMachine ? AskCurrentStats).mapTo[CurrentStats].onComplete {
+          case Success(v) =>
+            if (v.state == Complete) promise.success()
+          case Failure(th) =>
+            logger.error("error fetch current stats", th)
+            promise.failure(th)
+        }
+      }
+
+      promise.future
     }
   }
 
@@ -146,6 +170,11 @@ trait DoctorServiceComponent extends ActorSystemServiceComponent {
             }
           case _ =>
         }
+    }
+
+    onTransition {
+      case before -> after =>
+        log.debug(s"change state $before -> $after")
     }
     initialize()
   }

@@ -24,7 +24,11 @@ import scala.compat.java8.StreamConverters._
 import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
 
 case class RisaHttpProxyService(_system: ActorSystem)(implicit applicationConfig: ApplicationConfig)
-  extends LazyLogging with JsonMarshallSupport with XmlMarshallSupport with TerminableService with ActorSystemServiceComponent {
+  extends LazyLogging
+  with JsonMarshallSupport
+  with XmlMarshallSupport
+  with TerminableService
+  with ActorSystemServiceComponent {
   private var bind: ServerBinding = _
 
   override implicit val actorSystem: ActorSystem = _system

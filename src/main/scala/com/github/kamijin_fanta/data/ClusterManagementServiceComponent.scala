@@ -1,13 +1,13 @@
 package com.github.kamijin_fanta.data
 
 import Tables._
-import akka.actor.{FSM, Props}
-import com.github.kamijin_fanta.common.ActorSystemServiceComponent
+import akka.actor.{ FSM, Props }
+import com.github.kamijin_fanta.common.{ ActorSystemServiceComponent, ApplicationConfigComponent, DbServiceComponent }
 import com.github.kamijin_fanta.data.ClusterManagement.ReceiveClusterInfo
 
-import scala.concurrent.Future
 import scala.concurrent.duration._
-import scala.util.{Failure, Success}
+import scala.concurrent.{ ExecutionContextExecutor, Future }
+import scala.util.{ Failure, Success }
 
 object ClusterManagement {
   sealed trait State
@@ -17,36 +17,43 @@ object ClusterManagement {
   case object Started extends State
   case object Leave extends State
 
-
   sealed trait Data
   case object Uninitialized extends Data
   final case class ClusterSettings(
-    volumeGroupRow: VolumeGroupRow,
-    ) extends Data
+    volumeGroupRow: VolumeGroupRow) extends Data
 
   sealed trait Events
   case class ReceiveClusterInfo(volumeGroupRow: VolumeGroupRow) extends Events
   case object Fetch extends Events
-  case class Rejection(throwable: Throwable) extends  Events
+  case class Rejection(throwable: Throwable) extends Events
   case object BootstrapComplete extends Events
 }
 
-trait ClusterManagementServiceComponent extends ActorSystemServiceComponent {
+trait ClusterManagementServiceComponent
+  extends ActorSystemServiceComponent
+  with ApplicationConfigComponent
+  with DbServiceComponent
+  with DoctorServiceComponent {
 
   def ClusterManagementService = new ClusterManagementService
 
   class ClusterManagementService {
+    import slick.jdbc.MySQLProfile.api._
     val stateMachine = actorSystem.actorOf(Props(new ClusterManagementStateMachine(this)))
 
-    def fetchClusterInfo(): Future[ReceiveClusterInfo] = {
-      ???
+    def fetchClusterInfo()(implicit ctx: ExecutionContextExecutor): Future[ReceiveClusterInfo] = {
+      val volumeGroup = applicationConfig.data.group
+      dbService.backend.run(
+        VolumeGroup.filter(_.id === volumeGroup).result.headOption)
+        .map(_.getOrElse(throw new Exception(s"Not Found VolumeGroup #$volumeGroup")))
+        .map(v => ReceiveClusterInfo(v))
     }
 
     def startBootstrap(): Unit = {
-      ???
+      doctorService.startRepair()
     }
-    def waitCompaction(): Future[Unit] = {
-      ???
+    def waitRepair()(implicit ctx: ExecutionContextExecutor): Future[Unit] = {
+      doctorService.waitComplete()
     }
   }
 
@@ -72,7 +79,7 @@ trait ClusterManagementServiceComponent extends ActorSystemServiceComponent {
     }
     onTransition {
       case _ -> Initialize =>
-        client.fetchClusterInfo().onComplete{
+        client.fetchClusterInfo().onComplete {
           case Success(info) => self ! info
           case Failure(th) =>
             log.error(th, "cluster info fetch error")
@@ -81,15 +88,25 @@ trait ClusterManagementServiceComponent extends ActorSystemServiceComponent {
     }
 
     when(Bootstrap) {
-      case Event(BootstrapComplete , cluster: ClusterSettings) =>
+      case Event(BootstrapComplete, cluster: ClusterSettings) =>
         goto(Started)
+      case Event(e: Rejection, _) =>
+        goto(Idle)
     }
     onTransition {
       case _ -> Bootstrap =>
         client.startBootstrap()
-        client.waitCompaction().onComplete {
+        client.waitRepair().onComplete {
           case Success(_) => self ! BootstrapComplete
+          case Failure(th) =>
+            log.error(th, "bootstrap failure")
+            self ! Rejection(th)
         }
+    }
+
+    onTransition {
+      case before -> after =>
+        log.debug(s"change state $before -> $after")
     }
 
     initialize()

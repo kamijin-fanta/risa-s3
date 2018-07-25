@@ -6,7 +6,7 @@ import com.github.kamijin_fanta.data.RisaHttpDataService
 import com.github.kamijin_fanta.proxy.RisaHttpProxyService
 
 import scala.concurrent.ExecutionContextExecutor
-import scala.util.{ Failure, Success }
+import scala.util.{Failure, Success}
 
 object Main {
   var stop = false
@@ -18,7 +18,7 @@ object Main {
       implicit val config: ApplicationConfig = ApplicationConfig.load()
       val httpService: TerminableService = config.role match {
         case "proxy" => RisaHttpProxyService(system)
-        case "data" => RisaHttpDataService(system)
+        case "data" => RisaHttpDataService(system, config)
         case x => throw new IllegalArgumentException(s"known role $x")
       }
 

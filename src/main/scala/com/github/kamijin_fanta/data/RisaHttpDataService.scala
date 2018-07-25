@@ -13,19 +13,25 @@ import akka.http.scaladsl.server.Route
 import akka.stream._
 import akka.stream.scaladsl.FileIO
 import com.github.kamijin_fanta.ApplicationConfig
+import com.github.kamijin_fanta.common._
 import com.github.kamijin_fanta.common.model.Implement._
-import com.github.kamijin_fanta.common.{ ActorSystemServiceComponent, DbService, DbServiceComponent, TerminableService }
 import com.github.kamijin_fanta.data.metaProvider.MetaBackendServiceComponent
 import com.typesafe.scalalogging.{ LazyLogging, Logger }
 
 import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
 
-case class RisaHttpDataService(_system: ActorSystem)(implicit applicationConfig: ApplicationConfig)
-  extends LazyLogging with TerminableService with DbServiceComponent with MetaBackendServiceComponent with ActorSystemServiceComponent {
+case class RisaHttpDataService(_system: ActorSystem, _applicationConfig: ApplicationConfig)
+  extends LazyLogging
+  with TerminableService
+  with DbServiceComponent
+  with MetaBackendServiceComponent
+  with ActorSystemServiceComponent
+  with ApplicationConfigComponent {
   private var bind: ServerBinding = _
   var dbService: DbService = _
 
   override implicit val actorSystem: ActorSystem = _system
+  override implicit val applicationConfig: ApplicationConfig = _applicationConfig
 
   override def metaBackendService: MetaBackendService = new MetaBackendService(dbService)(actorSystem.dispatcher)
 
