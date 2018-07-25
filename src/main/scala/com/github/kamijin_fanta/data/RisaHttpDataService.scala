@@ -16,6 +16,7 @@ import com.github.kamijin_fanta.ApplicationConfig
 import com.github.kamijin_fanta.common._
 import com.github.kamijin_fanta.common.model.Implement._
 import com.github.kamijin_fanta.data.metaProvider.MetaBackendServiceComponent
+import com.github.kamijin_fanta.data.model.TabletItem
 import com.typesafe.scalalogging.{ LazyLogging, Logger }
 
 import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
@@ -82,7 +83,6 @@ case class RisaHttpDataService(_system: ActorSystem, _applicationConfig: Applica
     //    import akka.http.scaladsl.server.Directives.{Segment, complete, extractRequestEntity, get, getFromFile, onSuccess, path, post}
     //    import akka.http.scaladsl.server.RouteConcatenation._
 
-    case class TabletItem(tablet: String, itemName: String)
     def tabletItemAllocator(capacity: Long): Future[TabletItem] = {
       val randomName = UUID.randomUUID().toString
       Future.successful(TabletItem("0001", randomName))
