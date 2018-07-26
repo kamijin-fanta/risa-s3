@@ -21,7 +21,7 @@ class RisaHttpProxyServiceTest extends FunSpec with Matchers with BeforeAndAfter
 
   override def beforeAll(): Unit = {
     super.beforeAll()
-    httpService = RisaHttpProxyService()
+    httpService = RisaHttpProxyService(system)
     httpService.run()
   }
 
