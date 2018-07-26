@@ -1,3 +1,4 @@
+import Tables._
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.Uri.Path
 import akka.http.scaladsl.model._
@@ -5,10 +6,8 @@ import akka.http.scaladsl.testkit.ScalatestRouteTest
 import akka.stream._
 import akka.stream.scaladsl.{ BroadcastHub, Sink, Source }
 import com.github.kamijin_fanta.ApplicationConfig
-import com.github.kamijin_fanta.common.model.DataNode
 import com.github.kamijin_fanta.data.RisaHttpDataService
 import org.scalatest.{ BeforeAndAfterAll, FunSpec }
-import Tables._
 
 import scala.concurrent.duration._
 import scala.concurrent.{ Await, ExecutionContext, ExecutionContextExecutor, Future }
@@ -27,7 +26,7 @@ class RisaHttpDataServiceTest extends FunSpec with BeforeAndAfterAll with Scalat
     super.beforeAll()
     val nodeList = Seq(
       VolumeNodeRow(1, 1000, s"http://localhost:${port}", 1000000000L, 1000000000L),
-      VolumeNodeRow(1, 1000, s"http://localhost:${port + 1}", 1000000000L, 1000000000L))
+      VolumeNodeRow(2, 1000, s"http://localhost:${port + 1}", 1000000000L, 1000000000L))
     httpService = new RisaHttpDataService(system, config) {
       override def metaBackendService: MetaBackendService =
         new MetaBackendService(dbService) {

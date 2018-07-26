@@ -15,7 +15,7 @@ trait StorageServiceComponent {
 
   def storageService: StorageService
 
-  trait StorageService {
+  class StorageService {
     implicit class RichTabletItem(tabletItem: TabletItem) {
       def toPath: Path = {
         val normalize = (str: String) => str.replace("..", "")
@@ -31,12 +31,15 @@ trait StorageServiceComponent {
     def writeFile(tabletItem: TabletItem): Sink[ByteString, Future[IOResult]] =
       FileIO.toPath(tabletItem.toPath)
     def deleteFile(tabletItem: TabletItem): Unit =
-      Files.deleteIfExists(tabletItem.toPath)
+      Files.delete(tabletItem.toPath)
 
     def getFileSize(tabletItem: TabletItem): Long =
       Files.size(tabletItem.toPath)
     def calcChecksum(tabletItem: TabletItem)(implicit materializer: Materializer): Future[DigestResult] = {
       readFile(tabletItem) runWith DigestCalculator.fromAlgorithm(Algorithm.`SHA-256`)
     }
+
+    def toPath(tabletItem: TabletItem) =
+      tabletItem.toPath
   }
 }

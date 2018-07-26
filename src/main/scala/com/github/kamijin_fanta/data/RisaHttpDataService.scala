@@ -1,6 +1,6 @@
 package com.github.kamijin_fanta.data
 
-import java.io.File
+import java.nio.file.NoSuchFileException
 import java.util.UUID
 
 import Tables._
@@ -19,8 +19,8 @@ import com.github.kamijin_fanta.data.metaProvider.MetaBackendServiceComponent
 import com.github.kamijin_fanta.data.model.TabletItem
 import com.typesafe.scalalogging.{ LazyLogging, Logger }
 
-import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
 import scala.concurrent.duration._
+import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor, Future }
 
 case class RisaHttpDataService(_system: ActorSystem, _applicationConfig: ApplicationConfig)
   extends LazyLogging
@@ -30,13 +30,15 @@ case class RisaHttpDataService(_system: ActorSystem, _applicationConfig: Applica
   with ActorSystemServiceComponent
   with ApplicationConfigComponent
   with ClusterManagementServiceComponent
-  with DoctorServiceComponent {
+  with DoctorServiceComponent
+  with StorageServiceComponent {
 
   private var bind: ServerBinding = _
   var dbService: DbService = _
 
   override def doctorService: DoctorService = new DoctorService
   override def clusterManagementService: ClusterManagementService = new ClusterManagementService
+  override def storageService: StorageService = new StorageService
 
   override implicit val actorSystem: ActorSystem = _system
   override implicit val applicationConfig: ApplicationConfig = _applicationConfig
@@ -111,10 +113,9 @@ case class RisaHttpDataService(_system: ActorSystem, _applicationConfig: Applica
           val iores = for {
             tabletItem <- tabletItemAllocator(length)
             otherNodes <- metaBackendService.otherNodes()
-            localPath = toFile(tabletItem.tablet, tabletItem.itemName).toPath
-            to = FileIO.toPath(localPath)
+            to = storageService.writeFile(tabletItem)
             ioRes <- entity.dataBytes.runWith(to)
-            otherNodeRes <- otherNodesRequests(otherNodes, tabletItem, localPath)
+            otherNodeRes <- otherNodesRequests(otherNodes, tabletItem, storageService.toPath(tabletItem))
           } yield (tabletItem, ioRes, otherNodeRes)
 
           onSuccess(iores) { (tablet, ioRes, otherNodes) =>
@@ -130,7 +131,7 @@ case class RisaHttpDataService(_system: ActorSystem, _applicationConfig: Applica
     }
 
     def internalNewFile(entity: RequestEntity, tablet: String, name: String): Route = {
-      val localSink = FileIO.toPath(toFile(tablet, name).toPath)
+      val localSink = storageService.writeFile(TabletItem(tablet, name))
       val source = entity.dataBytes
 
       val result = source.runWith(localSink)
@@ -141,16 +142,9 @@ case class RisaHttpDataService(_system: ActorSystem, _applicationConfig: Applica
       }
     }
 
-    def toFile(tablet: String, name: String) = {
-      val base = applicationConfig.data.baseDir
-      val path = s"$base/$tablet/$name".replace("..", "")
-      new File(path)
-    }
-
     def getFile(tablet: String, name: String): Route = {
-      val file = toFile(tablet, name)
-      logger.debug(s"get access ${file.toPath} ${file.isFile} ${file.canRead}")
-      getFromFile(file, ContentTypes.NoContentType)
+      val file = storageService.toPath(TabletItem(tablet, name))
+      getFromFile(file.toFile, ContentTypes.NoContentType)
     }
 
     def deleteFile(tablet: String, name: String): Route = {
@@ -160,9 +154,9 @@ case class RisaHttpDataService(_system: ActorSystem, _applicationConfig: Applica
       logger.debug(s"delete $tablet/$name")
 
       def deleteLocalFile(): Future[Unit] = {
-        val file = toFile(tablet, name)
-        file.delete()
-        Future.successful()
+        Future {
+          storageService.deleteFile(TabletItem(tablet, name))
+        }
       }
       def deleteRemoteFiles(): Future[Seq[HttpResponse]] = {
         val requests = for {
@@ -190,11 +184,17 @@ case class RisaHttpDataService(_system: ActorSystem, _applicationConfig: Applica
     }
 
     def internalDeleteFile(tablet: String, name: String): Route = {
-      val file = toFile(tablet, name)
-      logger.debug(s"delete ${file.toPath} ${file.isFile} ${file.canRead}")
-
-      if (file.delete()) complete("ok")
-      else complete(StatusCodes.NotFound, "content not found")
+      val tabletItem = TabletItem(tablet, name)
+      try {
+        storageService.deleteFile(tabletItem)
+        complete("ok")
+      } catch {
+        case _: NoSuchFileException =>
+          complete(StatusCodes.NotFound, "content not found")
+        case th: Throwable =>
+          logger.error("internal delete file error", th)
+          complete(StatusCodes.InternalServerError, "internal server error")
+      }
     }
 
     pathPrefix("object") {
