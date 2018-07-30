@@ -1,6 +1,6 @@
 package com.github.kamijin_fanta.data
 
-import java.nio.file.{ Files, Path, Paths }
+import java.nio.file.{ Files, NoSuchFileException, Path, Paths }
 
 import akka.stream.{ IOResult, Materializer }
 import akka.stream.scaladsl.{ FileIO, Sink, Source }
@@ -8,7 +8,9 @@ import akka.util.ByteString
 import com.github.kamijin_fanta.common.{ Algorithm, ApplicationConfigComponent, DigestCalculator, DigestResult }
 import com.github.kamijin_fanta.data.model.TabletItem
 
-import scala.concurrent.Future
+import scala.concurrent.{ ExecutionContextExecutor, Future, blocking }
+import scala.collection.JavaConverters._
+import scala.util.Try
 
 trait StorageServiceComponent {
   self: ApplicationConfigComponent =>
@@ -39,7 +41,36 @@ trait StorageServiceComponent {
       readFile(tabletItem) runWith DigestCalculator.fromAlgorithm(Algorithm.`SHA-256`)
     }
 
-    def toPath(tabletItem: TabletItem) =
+    def toPath(tabletItem: TabletItem): Path =
       tabletItem.toPath
+
+    private val nodeIdPath = Paths.get(
+      applicationConfig.data.baseDir,
+      "_node_id")
+    def readNodeId()(implicit ctx: ExecutionContextExecutor): Future[Option[Int]] = {
+      Future {
+        blocking {
+          try {
+            Files
+              .readAllLines(nodeIdPath)
+              .asScala
+              .headOption
+              .flatMap(i => Try {
+                i.toInt
+              }.toOption)
+          } catch {
+            case _: NoSuchFileException =>
+              None
+          }
+        }
+      }
+    }
+    def writeNodeId(nodeId: Int)(implicit ctx: ExecutionContextExecutor): Future[Path] = {
+      Future {
+        blocking {
+          Files.write(nodeIdPath, nodeId.toString.getBytes)
+        }
+      }
+    }
   }
 }

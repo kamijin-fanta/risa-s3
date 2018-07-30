@@ -36,9 +36,9 @@ case class RisaHttpDataService(_system: ActorSystem, _applicationConfig: Applica
   private var bind: ServerBinding = _
   var dbService: DbService = _
 
-  override def doctorService: DoctorService = new DoctorService
-  override def clusterManagementService: ClusterManagementService = new ClusterManagementService
-  override def storageService: StorageService = new StorageService
+  override lazy val doctorService: DoctorService = new DoctorService
+  override lazy val clusterManagementService: ClusterManagementService = new ClusterManagementService
+  override lazy val storageService: StorageService = new StorageService
 
   override implicit val actorSystem: ActorSystem = _system
   override implicit val applicationConfig: ApplicationConfig = _applicationConfig
@@ -215,11 +215,6 @@ case class RisaHttpDataService(_system: ActorSystem, _applicationConfig: Applica
           getFile(tablet, name)
         } ~ delete {
           internalDeleteFile(tablet, name)
-        }
-      } ~ get {
-        val otherNode = metaBackendService.otherNodes(applicationConfig.data.group, applicationConfig.data.node)
-        onSuccess(otherNode) { res =>
-          complete(s"other: $res")
         }
       }
     }

@@ -24,27 +24,27 @@ class RisaHttpDataServiceTest extends FunSpec with BeforeAndAfterAll with Scalat
 
   override def beforeAll(): Unit = {
     super.beforeAll()
+
+    def makeService(config: ApplicationConfig, nodeList: Seq[VolumeNodeRow]) = {
+      new RisaHttpDataService(system, config) {
+        //        override def metaBackendService: MetaBackendService =
+        //          new MetaBackendService(dbService) {
+        //            override def nodes(nodeGroup: Int): Future[Seq[VolumeNodeRow]] =
+        //              Future.successful(nodeList)
+        //          }
+
+      }
+    }
     val nodeList = Seq(
       VolumeNodeRow(1, 1000, s"http://localhost:${port}", 1000000000L, 1000000000L),
       VolumeNodeRow(2, 1000, s"http://localhost:${port + 1}", 1000000000L, 1000000000L))
-    httpService = new RisaHttpDataService(system, config) {
-      override def metaBackendService: MetaBackendService =
-        new MetaBackendService(dbService) {
-          override def nodes(nodeGroup: Int): Future[Seq[VolumeNodeRow]] =
-            Future.successful(nodeList)
-        }
-
-    }
-    val config2 = config.copy(data = config.data.copy(port = port + 1, baseDir = "./data2"))
-    httpService2 = new RisaHttpDataService(system, config2) {
-      override def metaBackendService: MetaBackendService =
-        new MetaBackendService(dbService) {
-          override def nodes(nodeGroup: Int): Future[Seq[VolumeNodeRow]] =
-            Future.successful(nodeList)
-        }
-    }
+    httpService = makeService(config, nodeList)
+    val config2 = config.copy(data = config.data.copy(port = port + 1, baseDir = "./tmp/data2"))
+    httpService2 = makeService(config2, nodeList)
     httpService.run()
     httpService2.run()
+
+    Thread.sleep(3000) // todo wait for cluster
   }
 
   override def afterAll(): Unit = {

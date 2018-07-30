@@ -206,6 +206,12 @@ trait DoctorServiceComponent {
         }
     }
 
+    whenUnhandled {
+      case Event(AskCurrentStats, info: DoctorInfo) =>
+        sender() ! CurrentStats(stateName, info)
+        stay
+    }
+
     onTransition {
       case before -> after =>
         log.debug(s"change state $before -> $after")

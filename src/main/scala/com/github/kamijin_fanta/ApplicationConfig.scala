@@ -11,8 +11,8 @@ case class ApplicationConfig(
 case class DataNodeConfig(
   port: Int,
   group: Int,
-  node: Int,
-  baseDir: String)
+  baseDir: String,
+  exposeHost: String)
 
 object ApplicationConfig {
   def load(): ApplicationConfig = {
@@ -24,8 +24,8 @@ object ApplicationConfig {
     val dataConfig = DataNodeConfig(
       port = data.getInt("port"),
       group = data.getInt("group"),
-      node = data.getInt("node"),
-      baseDir = data.getString("base-dire"))
+      baseDir = data.getString("base-dire"),
+      exposeHost = data.getString("expose-host"))
 
     ApplicationConfig(
       domainSuffix = conf.getString("domain-suffix"),
